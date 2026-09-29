@@ -64,7 +64,7 @@ Batch_7_DBSE-DBD_Project/
 │   ├── requirements.txt             # Python backend dependencies
 │   ├── .env.example                 # Environment configuration template
 │   └── .env                         # Active backend environment configuration
-├── society-portal/                  # React Frontend Application
+├── frontend/                        # React Frontend Application
 │   ├── client/
 │   │   └── src/
 │   │       ├── api/                 # Centralized Axios API service layer
@@ -157,8 +157,8 @@ Interactive Swagger Documentation: **`http://127.0.0.1:8000/docs`**
 ### 2. Frontend Setup & Launch
 
 ```bash
-# 1. In a new terminal, navigate to society-portal directory
-cd society-portal
+# 1. In a new terminal, navigate to frontend directory
+cd frontend
 
 # 2. Install dependencies
 pnpm install
