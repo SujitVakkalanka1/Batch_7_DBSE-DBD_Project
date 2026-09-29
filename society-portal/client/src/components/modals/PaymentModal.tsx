@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import { X, CheckCircle2, CreditCard, Smartphone, Building, ShieldCheck, Download } from 'lucide-react';
 import { PaymentRecord } from '../../types/portal';
 
+import { paymentsApi } from '../../api';
+
 interface PaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
-  payment: PaymentRecord;
+  payment?: PaymentRecord;
   onSuccess: (paymentId: string) => void;
 }
 
@@ -19,18 +21,34 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const [upiId, setUpiId] = useState('sujit@okhdfcbank');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isPaid, setIsPaid] = useState(false);
+  const [transactionId, setTransactionId] = useState('TXN-994821804');
+  const [errorMsg, setErrorMsg] = useState('');
 
-  if (!isOpen) return null;
+  if (!isOpen || !payment) return null;
 
-  const handlePay = (e: React.FormEvent) => {
+  const handlePay = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsProcessing(true);
-    setTimeout(() => {
-      setIsProcessing(false);
+    setErrorMsg('');
+
+    try {
+      const updated = await paymentsApi.payBill(payment.id, {
+        method,
+        upi_id: method === 'upi' ? upiId : undefined,
+      });
+      if (updated.transaction_id) {
+        setTransactionId(updated.transaction_id);
+      }
       setIsPaid(true);
       onSuccess(payment.id);
-    }, 900);
+    } catch (err: any) {
+      console.error('Payment execution error:', err);
+      setErrorMsg(err.response?.data?.detail || 'Payment processing failed. Please try again.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
@@ -66,7 +84,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 max-w-sm mx-auto mb-6 text-left">
                 <div className="flex justify-between text-xs py-1 text-zinc-400">
                   <span>Transaction ID</span>
-                  <span className="font-mono text-white">TXN-994821804</span>
+                  <span className="font-mono text-white">{transactionId}</span>
                 </div>
                 <div className="flex justify-between text-xs py-1 text-zinc-400">
                   <span>Amount Paid</span>
@@ -74,7 +92,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 </div>
                 <div className="flex justify-between text-xs py-1 text-zinc-400">
                   <span>Flat Unit</span>
-                  <span className="text-white">Tower B · Flat 704</span>
+                  <span className="text-white">{payment.unit || 'Tower B · Flat 704'}</span>
                 </div>
               </div>
               <button
@@ -182,6 +200,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 <ShieldCheck size={16} className="text-emerald-400 shrink-0" />
                 <span>256-Bit SSL Encrypted Society Escrow Account</span>
               </div>
+
+              {errorMsg && (
+                <div className="p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 text-xs">
+                  {errorMsg}
+                </div>
+              )}
 
               <button
                 type="submit"

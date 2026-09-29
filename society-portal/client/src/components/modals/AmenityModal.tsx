@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { X, Calendar, Clock, CheckCircle2, Sparkles } from 'lucide-react';
 import { AmenityBooking } from '../../types/portal';
 
+import { bookingsApi } from '../../api';
+
 interface AmenityModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -17,24 +19,33 @@ export const AmenityModal: React.FC<AmenityModalProps> = ({
   const [date, setDate] = useState('2026-09-20');
   const [timeSlot, setTimeSlot] = useState('06:00 PM - 09:00 PM');
   const [isDone, setIsDone] = useState(false);
+  const [isBooking, setIsBooking] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   if (!isOpen) return null;
 
-  const handleBook = (e: React.FormEvent) => {
+  const handleBook = async (e: React.FormEvent) => {
     e.preventDefault();
-    const booking: AmenityBooking = {
-      id: `BK-${Math.floor(1000 + Math.random() * 9000)}`,
-      amenityName,
-      date,
-      timeSlot,
-      unit: 'Tower B · Flat 704',
-      bookedBy: 'Sujit Kumar',
-      status: 'Confirmed',
-      amount: amenityName === 'Clubhouse Banquet' ? '₹5,000 (Refundable deposit)' : '₹0 (Complimentary)',
-    };
-    onBook(booking);
-    setIsDone(true);
+    setIsBooking(true);
+    setErrorMsg('');
+
+    try {
+      const newBooking = await bookingsApi.createBooking({
+        amenityName,
+        date,
+        timeSlot,
+      });
+      onBook(newBooking);
+      setIsDone(true);
+    } catch (err: any) {
+      console.error('Error reserving amenity:', err);
+      const detail = err.response?.data?.detail || 'Failed to complete booking. Slot might be unavailable.';
+      setErrorMsg(detail);
+    } finally {
+      setIsBooking(false);
+    }
   };
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
@@ -138,11 +149,22 @@ export const AmenityModal: React.FC<AmenityModalProps> = ({
                 </div>
               </div>
 
+              {errorMsg && (
+                <div className="p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 text-xs">
+                  {errorMsg}
+                </div>
+              )}
+
               <button
                 type="submit"
-                className="w-full py-3.5 px-6 rounded-xl bg-[#CCFF00] text-black font-display font-extrabold text-xs uppercase tracking-[0.14em] hover:bg-[#bceb00] active:scale-[0.99] transition-all shadow-lg shadow-[#CCFF00]/20 flex items-center justify-center gap-2"
+                disabled={isBooking}
+                className="w-full py-3.5 px-6 rounded-xl bg-[#CCFF00] text-black font-display font-extrabold text-xs uppercase tracking-[0.14em] hover:bg-[#bceb00] active:scale-[0.99] transition-all shadow-lg shadow-[#CCFF00]/20 flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                <span>Confirm Reservation</span>
+                {isBooking ? (
+                  <span className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <span>Confirm Reservation</span>
+                )}
               </button>
             </form>
           )}

@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { X, QrCode, Key, Share2, Copy, CheckCircle2, Shield } from 'lucide-react';
 import { GatePass } from '../../types/portal';
 
+import { gatePassesApi } from '../../api';
+
 interface GatePassModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -19,26 +21,33 @@ export const GatePassModal: React.FC<GatePassModalProps> = ({
   const [validDate, setValidDate] = useState('Today (Valid for 12 hours)');
   const [generatedPass, setGeneratedPass] = useState<GatePass | null>(null);
   const [copied, setCopied] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   if (!isOpen) return null;
 
-  const handleGenerate = (e: React.FormEvent) => {
+  const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
-    const randomCode = `${Math.floor(100 + Math.random() * 900)}-${Math.floor(100 + Math.random() * 900)}`;
-    const pass: GatePass = {
-      id: `GP-${Math.floor(1000 + Math.random() * 9000)}`,
-      visitorName,
-      visitorPhone: visitorPhone || 'Not provided',
-      purpose,
-      unit: 'Tower B · Flat 704',
-      validDate: 'Today',
-      validTime: 'Valid till 11:59 PM',
-      passCode: randomCode,
-      status: 'Active',
-    };
-    setGeneratedPass(pass);
-    onCreated(pass);
+    setIsGenerating(true);
+    setErrorMsg('');
+
+    try {
+      const pass = await gatePassesApi.createGatePass({
+        visitorName,
+        visitorPhone: visitorPhone || undefined,
+        purpose,
+        validDate: 'Today',
+      });
+      setGeneratedPass(pass);
+      onCreated(pass);
+    } catch (err: any) {
+      console.error('Error creating gate pass:', err);
+      setErrorMsg(err.response?.data?.detail || 'Failed to generate gate pass.');
+    } finally {
+      setIsGenerating(false);
+    }
   };
+
 
   const handleCopy = () => {
     if (!generatedPass) return;
@@ -176,11 +185,22 @@ export const GatePassModal: React.FC<GatePassModalProps> = ({
                 <span>Security gate guards will scan the QR code for touchless barrier lift.</span>
               </div>
 
+              {errorMsg && (
+                <div className="p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 text-xs">
+                  {errorMsg}
+                </div>
+              )}
+
               <button
                 type="submit"
-                className="w-full py-3.5 px-6 rounded-xl bg-[#CCFF00] text-black font-display font-extrabold text-xs uppercase tracking-[0.14em] hover:bg-[#bceb00] active:scale-[0.99] transition-all shadow-lg shadow-[#CCFF00]/20 flex items-center justify-center gap-2"
+                disabled={isGenerating}
+                className="w-full py-3.5 px-6 rounded-xl bg-[#CCFF00] text-black font-display font-extrabold text-xs uppercase tracking-[0.14em] hover:bg-[#bceb00] active:scale-[0.99] transition-all shadow-lg shadow-[#CCFF00]/20 flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                <span>Generate Instant Pass QR</span>
+                {isGenerating ? (
+                  <span className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <span>Generate Instant Pass QR</span>
+                )}
               </button>
             </form>
           )}

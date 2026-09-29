@@ -1,6 +1,7 @@
 export type UserRole = 'resident' | 'admin';
 
 export interface UserProfile {
+  id?: string;
   role: UserRole;
   name: string;
   initials: string;
@@ -8,7 +9,33 @@ export interface UserProfile {
   unit: string;
   email: string;
   phone: string;
+  tower?: string;
+  flat_number?: string;
+  resident_type?: string;
+  parking_bay?: string;
+  vehicle_number?: string;
+  intercom_ext?: string;
+  status?: string;
+  account_status?: string;
+  family_members?: FamilyMember[];
+  family_count?: number;
 }
+
+export interface FamilyMember {
+  id: string;
+  resident_id: string;
+  name: string;
+  relationship: string;
+  age?: number;
+  phone?: string;
+  email?: string;
+  gender?: string;
+  emergency_contact?: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+
 
 export interface HighlightItem {
   id: string;
@@ -80,7 +107,11 @@ export interface PaymentRecord {
   amount: string;
   dueDate: string;
   paidDate?: string;
-  status: 'Paid' | 'Pending' | 'Overdue';
+  status: 'Paid' | 'Pending' | 'Overdue' | 'Processing' | 'Failed';
+  unit?: string;
+  resident_name?: string;
+  transaction_id?: string;
+  payment_method?: string;
   breakdown: {
     maintenance: string;
     sinkingFund: string;
@@ -88,3 +119,4 @@ export interface PaymentRecord {
     parkingCharges: string;
   };
 }
+

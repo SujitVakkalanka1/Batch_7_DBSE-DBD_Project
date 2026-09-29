@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Search,
   Bell,
@@ -17,19 +17,36 @@ import {
   Building,
   DollarSign,
   Download,
+  UserPlus,
+  UserCheck,
+  UserX,
+  Edit2,
+  Eye,
+  Filter,
 } from 'lucide-react';
 import { BrandLogo } from '../common/BrandLogo';
 import { BottomNavDock, AdminTab } from '../navigation/BottomNavDock';
 import {
   adminProfile,
   adminHighlights,
-  adminAnnouncements,
+  adminAnnouncements as defaultAdminAnnouncements,
   adminQuickActions,
   initialTickets,
 } from '../../data/mockData';
 import { ComplaintTicket, AnnouncementItem } from '../../types/portal';
+import {
+  adminApi,
+  AdminDashboardMetrics,
+  complaintsApi,
+  noticesApi,
+  residentsApi,
+  paymentsApi,
+  ResidentDirectoryItem,
+} from '../../api';
 import { BroadcastModal } from '../modals/BroadcastModal';
 import { NoticeDetailModal } from '../modals/NoticeDetailModal';
+import { ResidentFormModal } from '../modals/ResidentFormModal';
+import { ResidentDetailModal } from '../modals/ResidentDetailModal';
 
 interface AdminDashboardProps {
   onLogout: () => void;
@@ -43,25 +60,216 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
   // Tickets management state
   const [tickets, setTickets] = useState<ComplaintTicket[]>(initialTickets);
-  const [announcements, setAnnouncements] = useState<AnnouncementItem[]>(adminAnnouncements);
+  const [announcements, setAnnouncements] = useState<AnnouncementItem[]>(defaultAdminAnnouncements);
+  const [directory, setDirectory] = useState<ResidentDirectoryItem[]>([]);
+  const [metrics, setMetrics] = useState<AdminDashboardMetrics>({
+    total_residents: 248,
+    total_flats: 248,
+    occupied_flats: 242,
+    occupancy_rate: '98%',
+    total_dues_collected: '₹9.42L',
+    total_dues_pending: '₹19,400',
+    collection_efficiency: '82% this cycle',
+    pending_violations: 7,
+    active_complaints: 4,
+    pending_complaints: 1,
+    in_progress_complaints: 1,
+    resolved_complaints: 2,
+    active_gate_passes: 1,
+    upcoming_bookings: 2,
+  });
 
-  const handleStatusChange = (ticketId: string, newStatus: ComplaintTicket['status']) => {
+  const [isExportingCsv, setIsExportingCsv] = useState(false);
+
+  // Resident Management state
+  const [residentTowerFilter, setResidentTowerFilter] = useState('All');
+  const [residentStatusFilter, setResidentStatusFilter] = useState('All');
+  const [residentSearchQuery, setResidentSearchQuery] = useState('');
+  const [isAddResidentModalOpen, setIsAddResidentModalOpen] = useState(false);
+  const [residentToEdit, setResidentToEdit] = useState<ResidentDirectoryItem | null>(null);
+  const [detailResidentId, setDetailResidentId] = useState<string | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [isTogglingStatusId, setIsTogglingStatusId] = useState<string | null>(null);
+  const [isLoadingResidents, setIsLoadingResidents] = useState(false);
+
+  // Fetch admin data on load
+  const fetchAdminData = async () => {
+    try {
+      // 1. Dashboard Metrics
+      try {
+        const m = await adminApi.getDashboardMetrics();
+        setMetrics(m);
+      } catch (err) {
+        console.warn('Error fetching metrics:', err);
+      }
+
+      // 2. All Complaints
+      try {
+        const allTickets = await complaintsApi.getAllComplaints();
+        if (allTickets && allTickets.length > 0) {
+          setTickets(allTickets);
+        }
+      } catch (err) {
+        console.warn('Error fetching complaints:', err);
+      }
+
+      // 3. Notices
+      try {
+        const allNotices = await noticesApi.getAllNotices();
+        if (allNotices && allNotices.length > 0) {
+          setAnnouncements(allNotices);
+        }
+      } catch (err) {
+        console.warn('Error fetching notices:', err);
+      }
+
+      // 4. Resident Directory
+      await fetchResidentsList(residentTowerFilter, residentStatusFilter, residentSearchQuery);
+    } catch (err) {
+      console.error('Failed to load admin data:', err);
+    }
+  };
+
+  const fetchResidentsList = async (tower?: string, status?: string, search?: string) => {
+    setIsLoadingResidents(true);
+    try {
+      const params: any = {};
+      if (tower && tower !== 'All') params.tower = tower;
+      if (status && status !== 'All') params.status = status;
+      if (search && search.trim()) params.search = search.trim();
+
+      const residents = await residentsApi.getAllResidents(params);
+      if (residents) {
+        setDirectory(residents);
+      }
+    } catch (err) {
+      console.warn('Error fetching resident directory:', err);
+    } finally {
+      setIsLoadingResidents(false);
+    }
+  };
+
+  const handleTowerFilterChange = (tower: string) => {
+    setResidentTowerFilter(tower);
+    fetchResidentsList(tower, residentStatusFilter, residentSearchQuery);
+  };
+
+  const handleStatusFilterChange = (status: string) => {
+    setResidentStatusFilter(status);
+    fetchResidentsList(residentTowerFilter, status, residentSearchQuery);
+  };
+
+  const handleResidentSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    fetchResidentsList(residentTowerFilter, residentStatusFilter, residentSearchQuery);
+  };
+
+  const handleOpenAddResident = () => {
+    setResidentToEdit(null);
+    setIsAddResidentModalOpen(true);
+  };
+
+  const handleOpenEditResident = (r: ResidentDirectoryItem) => {
+    setResidentToEdit(r);
+    setIsAddResidentModalOpen(true);
+  };
+
+  const handleOpenDetail = (id: string) => {
+    setDetailResidentId(id);
+    setIsDetailModalOpen(true);
+  };
+
+  const handleResidentSaved = async () => {
+    await fetchAdminData();
+    await fetchResidentsList(residentTowerFilter, residentStatusFilter, residentSearchQuery);
+  };
+
+  const handleToggleResidentStatus = async (id: string, currentStatus: string) => {
+    const nextStatus = currentStatus === 'Inactive' ? 'Active' : 'Inactive';
+    setIsTogglingStatusId(id);
+    try {
+      await residentsApi.updateResidentStatus(id, nextStatus);
+      // Update local state
+      setDirectory((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, account_status: nextStatus, status: nextStatus } : r))
+      );
+      // Refresh metrics
+      const m = await adminApi.getDashboardMetrics();
+      setMetrics(m);
+    } catch (err: any) {
+      console.error('Error toggling status:', err);
+      alert(err.response?.data?.detail || 'Failed to update resident status.');
+    } finally {
+      setIsTogglingStatusId(null);
+    }
+  };
+
+
+  useEffect(() => {
+    fetchAdminData();
+  }, []);
+
+  const handleStatusChange = async (ticketId: string, newStatus: ComplaintTicket['status']) => {
+    // Optimistic UI update
     setTickets((prev) =>
       prev.map((t) => (t.id === ticketId ? { ...t, status: newStatus } : t))
     );
+
+    try {
+      await complaintsApi.updateComplaintStatus(ticketId, newStatus);
+      // Refresh metrics
+      const updatedMetrics = await adminApi.getDashboardMetrics();
+      setMetrics(updatedMetrics);
+    } catch (err) {
+      console.error('Failed to update ticket status on backend:', err);
+    }
   };
 
   const handleBroadcastAdded = (newNotice: AnnouncementItem) => {
     setAnnouncements((prev) => [newNotice, ...prev]);
   };
 
-  const residentDirectory = [
-    { unit: 'A-101', name: 'Dr. Vikram Mehra', phone: '+91 98201 11223', status: 'Dues Cleared' },
-    { unit: 'A-204', name: 'Pooja Agarwal', phone: '+91 98202 22334', status: 'Dues Cleared' },
-    { unit: 'B-704', name: 'Sujit Kumar', phone: '+91 98765 43210', status: 'Dues Cleared' },
-    { unit: 'B-705', name: 'Amitabh Sen', phone: '+91 98203 33445', status: 'Due (₹4,850)' },
-    { unit: 'C-302', name: 'Kavita Nair', phone: '+91 98204 44556', status: 'Dues Cleared' },
-    { unit: 'C-901', name: 'Rohit Deshmukh', phone: '+91 98205 55667', status: 'Due (₹9,700)' },
+  // Real CSV file download implementation
+  const handleExportCsv = async () => {
+    setIsExportingCsv(true);
+    try {
+      const blob = await paymentsApi.exportLedgerCsv();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `maple_heights_ledger_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error('Error exporting ledger CSV:', err);
+      alert('Failed to export CSV. Please ensure the backend server is running.');
+    } finally {
+      setIsExportingCsv(false);
+    }
+  };
+
+  // Filtered tickets based on search
+  const filteredTickets = useMemo(() => {
+    if (!searchQuery) return tickets;
+    const q = searchQuery.toLowerCase();
+    return tickets.filter((t) =>
+      t.title.toLowerCase().includes(q) ||
+      t.unit.toLowerCase().includes(q) ||
+      t.submittedBy.toLowerCase().includes(q) ||
+      t.id.toLowerCase().includes(q)
+    );
+  }, [tickets, searchQuery]);
+
+  // Fallback directory if database has few records
+  const residentDirectory = directory.length > 0 ? directory : [
+    { id: '1', unit: 'A-101', name: 'Dr. Vikram Mehra', phone: '+91 98201 11223', status: 'Dues Cleared' },
+    { id: '2', unit: 'A-204', name: 'Pooja Agarwal', phone: '+91 98202 22334', status: 'Dues Cleared' },
+    { id: '3', unit: 'B-704', name: 'Sujit Kumar', phone: '+91 98765 43210', status: 'Dues Cleared' },
+    { id: '4', unit: 'B-705', name: 'Amitabh Sen', phone: '+91 98203 33445', status: 'Due (₹4,850)' },
+    { id: '5', unit: 'C-302', name: 'Kavita Nair', phone: '+91 98204 44556', status: 'Dues Cleared' },
+    { id: '6', unit: 'C-901', name: 'Rohit Deshmukh', phone: '+91 98205 55667', status: 'Due (₹9,700)' },
   ];
 
   return (
@@ -136,10 +344,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
                 <div className="mt-4">
                   <div className="font-display text-4xl sm:text-5xl font-extrabold tracking-tight">
-                    ₹9.42L
+                    {metrics.total_dues_collected}
                   </div>
                   <div className="flex items-center gap-2 mt-1.5">
-                    <span className="text-xs font-bold text-black/70">82% collection efficiency</span>
+                    <span className="text-xs font-bold text-black/70">{metrics.collection_efficiency}</span>
                     <span className="text-[10px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded-full bg-black text-[#CCFF00]">
                       Active Cycle
                     </span>
@@ -160,7 +368,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
                 <div className="mt-4">
                   <div className="font-display text-4xl sm:text-5xl font-extrabold tracking-tight text-white">
-                    07
+                    0{metrics.pending_violations}
                   </div>
                   <div className="flex items-center gap-2 mt-1.5 text-xs text-zinc-400">
                     <span>3 parking flags · 2 noise notices · 2 renovation queries</span>
@@ -238,48 +446,65 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         {/* ==================== TAB: TICKETS ==================== */}
         {activeTab === 'tickets' && (
           <div className="space-y-6 animate-fade-in">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h2 className="font-display text-2xl font-bold">Society Maintenance Log</h2>
                 <p className="text-xs text-zinc-400">Manage and resolve complaints submitted by residents</p>
               </div>
+
+              <div className="relative w-full sm:w-64">
+                <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Filter tickets..."
+                  className="w-full pl-9 pr-4 py-2 bg-[#16171d] border border-white/15 rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-[#CCFF00]"
+                />
+              </div>
             </div>
 
             <div className="space-y-3">
-              {tickets.map((t) => (
-                <div
-                  key={t.id}
-                  className="p-5 rounded-2xl bg-[#16171d] border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4"
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs text-[#CCFF00] font-bold">{t.id}</span>
-                      <span className="text-zinc-400 text-xs font-semibold">· {t.unit}</span>
-                      <span className="text-zinc-500 text-xs">· {t.submittedBy}</span>
-                    </div>
-                    <h4 className="font-display text-base font-bold text-white">{t.title}</h4>
-                    <p className="text-xs text-zinc-400">{t.description}</p>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <select
-                      value={t.status}
-                      onChange={(e) => handleStatusChange(t.id, e.target.value as any)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase bg-[#0d0e11] border focus:outline-none ${
-                        t.status === 'Resolved'
-                          ? 'border-emerald-500 text-emerald-400'
-                          : t.status === 'In Progress'
-                          ? 'border-sky-500 text-sky-400'
-                          : 'border-amber-500 text-amber-400'
-                      }`}
-                    >
-                      <option value="Pending">Pending</option>
-                      <option value="In Progress">In Progress</option>
-                      <option value="Resolved">Resolved</option>
-                    </select>
-                  </div>
+              {filteredTickets.length === 0 ? (
+                <div className="p-8 text-center bg-[#16171d] rounded-2xl border border-white/10 text-zinc-400 text-sm">
+                  No maintenance tickets found.
                 </div>
-              ))}
+              ) : (
+                filteredTickets.map((t) => (
+                  <div
+                    key={t.id}
+                    className="p-5 rounded-2xl bg-[#16171d] border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs text-[#CCFF00] font-bold">{t.id}</span>
+                        <span className="text-zinc-400 text-xs font-semibold">· {t.unit}</span>
+                        <span className="text-zinc-500 text-xs">· {t.submittedBy}</span>
+                      </div>
+                      <h4 className="font-display text-base font-bold text-white">{t.title}</h4>
+                      <p className="text-xs text-zinc-400">{t.description}</p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <select
+                        value={t.status}
+                        onChange={(e) => handleStatusChange(t.id, e.target.value as any)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase bg-[#0d0e11] border focus:outline-none ${
+                          t.status === 'Resolved'
+                            ? 'border-emerald-500 text-emerald-400'
+                            : t.status === 'In Progress'
+                            ? 'border-sky-500 text-sky-400'
+                            : 'border-amber-500 text-amber-400'
+                        }`}
+                      >
+                        <option value="Pending">Pending</option>
+                        <option value="In Progress">In Progress</option>
+                        <option value="Resolved">Resolved</option>
+                      </select>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
@@ -294,11 +519,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               </div>
               <button
                 type="button"
-                onClick={() => alert('Exporting full society ledger to CSV...')}
-                className="py-2.5 px-4 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 text-white"
+                onClick={handleExportCsv}
+                disabled={isExportingCsv}
+                className="py-2.5 px-4 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 text-white transition-colors disabled:opacity-50"
               >
-                <Download size={14} />
-                <span>Export CSV</span>
+                {isExportingCsv ? (
+                  <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Download size={14} />
+                )}
+                <span>{isExportingCsv ? 'Exporting...' : 'Export CSV'}</span>
               </button>
             </div>
 
@@ -333,7 +563,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                       <td className="py-3.5 text-right">
                         <button
                           type="button"
-                          onClick={() => alert(`Sending payment reminder SMS to ${r.name} (${r.unit})`)}
+                          onClick={() => alert(`Sending automated payment reminder to ${r.name} (${r.unit}) via SMS and Portal notice.`)}
                           className="text-[11px] text-[#CCFF00] hover:underline font-bold"
                         >
                           Send Reminder
@@ -389,29 +619,244 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         {/* ==================== TAB: MANAGEMENT / SETTINGS ==================== */}
         {activeTab === 'settings' && (
           <div className="space-y-6 animate-fade-in">
-            <div>
-              <h2 className="font-display text-2xl font-bold">Resident Unit Registry</h2>
-              <p className="text-xs text-zinc-400">Manage owner and tenant records across Towers A, B, and C</p>
+            {/* Header with Title and Add Resident Button */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="font-display text-2xl font-bold">Resident & Family Member Directory</h2>
+                <p className="text-xs text-zinc-400">
+                  Manage resident records, tower allocations, status, and view registered family members
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleOpenAddResident}
+                className="py-2.5 px-4 rounded-xl bg-[#CCFF00] text-black font-display font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-[#CCFF00]/20 hover:bg-[#bceb00] transition-colors shrink-0"
+              >
+                <UserPlus size={16} />
+                <span>Add Resident</span>
+              </button>
             </div>
 
-            <div className="p-6 rounded-3xl bg-[#16171d] border border-white/10">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10">
-                  <span className="text-xs text-zinc-400 block mb-1">Tower A</span>
-                  <span className="font-display text-2xl font-bold text-white">84 Units</span>
-                  <span className="text-[10px] text-emerald-400 block mt-1">100% Occupancy</span>
+            {/* Tower Occupancy Summary Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div
+                onClick={() => handleTowerFilterChange('Tower A')}
+                className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                  residentTowerFilter === 'Tower A'
+                    ? 'bg-[#CCFF00]/10 border-[#CCFF00]'
+                    : 'bg-[#16171d] border-white/10 hover:border-white/20'
+                }`}
+              >
+                <span className="text-xs text-zinc-400 block mb-1 font-mono">Tower A</span>
+                <span className="font-display text-xl font-bold text-white">84 Units</span>
+                <span className="text-[10px] text-emerald-400 block mt-0.5">100% Occupancy</span>
+              </div>
+              <div
+                onClick={() => handleTowerFilterChange('Tower B')}
+                className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                  residentTowerFilter === 'Tower B'
+                    ? 'bg-[#CCFF00]/10 border-[#CCFF00]'
+                    : 'bg-[#16171d] border-white/10 hover:border-white/20'
+                }`}
+              >
+                <span className="text-xs text-zinc-400 block mb-1 font-mono">Tower B</span>
+                <span className="font-display text-xl font-bold text-white">84 Units</span>
+                <span className="text-[10px] text-emerald-400 block mt-0.5">98% Occupancy</span>
+              </div>
+              <div
+                onClick={() => handleTowerFilterChange('Tower C')}
+                className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                  residentTowerFilter === 'Tower C'
+                    ? 'bg-[#CCFF00]/10 border-[#CCFF00]'
+                    : 'bg-[#16171d] border-white/10 hover:border-white/20'
+                }`}
+              >
+                <span className="text-xs text-zinc-400 block mb-1 font-mono">Tower C</span>
+                <span className="font-display text-xl font-bold text-white">80 Units</span>
+                <span className="text-[10px] text-emerald-400 block mt-0.5">95% Occupancy</span>
+              </div>
+            </div>
+
+            {/* Filter & Search Bar */}
+            <div className="p-4 rounded-2xl bg-[#16171d] border border-white/10 space-y-3">
+              <form onSubmit={handleResidentSearch} className="flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1">
+                  <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+                  <input
+                    type="text"
+                    value={residentSearchQuery}
+                    onChange={(e) => setResidentSearchQuery(e.target.value)}
+                    placeholder="Search residents by name, unit, phone, or email..."
+                    className="w-full pl-10 pr-4 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-[#CCFF00] transition-colors"
+                  />
                 </div>
-                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10">
-                  <span className="text-xs text-zinc-400 block mb-1">Tower B</span>
-                  <span className="font-display text-2xl font-bold text-white">84 Units</span>
-                  <span className="text-[10px] text-emerald-400 block mt-1">98% Occupancy</span>
+                <button
+                  type="submit"
+                  className="py-2 px-4 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-bold uppercase tracking-wider text-white shrink-0"
+                >
+                  Search
+                </button>
+              </form>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-white/5 text-xs">
+                {/* Tower Filters */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[11px] font-bold text-zinc-500 uppercase mr-1">Tower:</span>
+                  {['All', 'Tower A', 'Tower B', 'Tower C'].map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => handleTowerFilterChange(t)}
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                        residentTowerFilter === t
+                          ? 'bg-[#CCFF00] text-black font-bold'
+                          : 'bg-white/5 text-zinc-300 hover:bg-white/10'
+                      }`}
+                    >
+                      {t}
+                    </button>
+                  ))}
                 </div>
-                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10">
-                  <span className="text-xs text-zinc-400 block mb-1">Tower C</span>
-                  <span className="font-display text-2xl font-bold text-white">80 Units</span>
-                  <span className="text-[10px] text-emerald-400 block mt-1">95% Occupancy</span>
+
+                {/* Status Filters */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[11px] font-bold text-zinc-500 uppercase mr-1">Status:</span>
+                  {['All', 'Active', 'Inactive'].map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => handleStatusFilterChange(s)}
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                        residentStatusFilter === s
+                          ? s === 'Active'
+                            ? 'bg-emerald-500 text-white font-bold'
+                            : s === 'Inactive'
+                            ? 'bg-red-500 text-white font-bold'
+                            : 'bg-[#CCFF00] text-black font-bold'
+                          : 'bg-white/5 text-zinc-300 hover:bg-white/10'
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
                 </div>
               </div>
+            </div>
+
+            {/* Residents Table / List */}
+            <div className="p-6 rounded-3xl bg-[#16171d] border border-white/10 overflow-x-auto">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-xs font-mono uppercase text-zinc-400">
+                  Showing {directory.length} resident records
+                </span>
+                {isLoadingResidents && (
+                  <span className="text-xs text-[#CCFF00] flex items-center gap-1.5">
+                    <span className="w-3 h-3 border-2 border-[#CCFF00] border-t-transparent rounded-full animate-spin" />
+                    Updating...
+                  </span>
+                )}
+              </div>
+
+              {directory.length === 0 ? (
+                <div className="py-12 text-center text-zinc-500 text-xs border border-dashed border-white/10 rounded-2xl">
+                  No resident records match your criteria.
+                </div>
+              ) : (
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-white/10 text-zinc-400 font-mono uppercase text-[10px]">
+                      <th className="pb-3">Resident & Unit</th>
+                      <th className="pb-3">Contact</th>
+                      <th className="pb-3">Type</th>
+                      <th className="pb-3">Family Members</th>
+                      <th className="pb-3">Status</th>
+                      <th className="pb-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {directory.map((r) => {
+                      const isInactive = r.account_status === 'Inactive' || r.status === 'Inactive';
+                      return (
+                        <tr key={r.id} className="hover:bg-white/[0.02] transition-colors">
+                          <td className="py-3.5">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-white/10 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                                {r.name.substring(0, 2).toUpperCase()}
+                              </div>
+                              <div>
+                                <span className="font-bold text-white block">{r.name}</span>
+                                <span className="text-[11px] text-zinc-400">{r.unit}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3.5">
+                            <span className="font-mono text-zinc-300 block">{r.phone}</span>
+                            {r.email && <span className="font-mono text-[11px] text-zinc-500 block truncate">{r.email}</span>}
+                          </td>
+                          <td className="py-3.5">
+                            <span className="text-zinc-300 text-[11px]">{r.resident_type || 'Owner Resident'}</span>
+                          </td>
+                          <td className="py-3.5">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenDetail(r.id)}
+                              className="px-2 py-0.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] text-zinc-300 font-semibold flex items-center gap-1.5 transition-colors"
+                              title="Click to view family members"
+                            >
+                              <Users size={12} className="text-[#CCFF00]" />
+                              <span>{r.family_count || 0} Members</span>
+                            </button>
+                          </td>
+                          <td className="py-3.5">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase ${
+                                isInactive
+                                  ? 'bg-red-500/20 text-red-400'
+                                  : 'bg-emerald-500/20 text-emerald-400'
+                              }`}
+                            >
+                              {isInactive ? 'Inactive' : 'Active'}
+                            </span>
+                          </td>
+                          <td className="py-3.5 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenDetail(r.id)}
+                                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white transition-colors"
+                                title="View Details & Family Members"
+                              >
+                                <Eye size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditResident(r)}
+                                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-[#CCFF00] transition-colors"
+                                title="Edit Resident"
+                              >
+                                <Edit2 size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleResidentStatus(r.id, isInactive ? 'Inactive' : 'Active')}
+                                disabled={isTogglingStatusId === r.id}
+                                className={`p-1.5 rounded-lg transition-colors ${
+                                  isInactive
+                                    ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400'
+                                    : 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-400'
+                                }`}
+                                title={isInactive ? 'Reactivate Resident' : 'Deactivate Resident'}
+                              >
+                                {isInactive ? <UserCheck size={14} /> : <UserX size={14} />}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         )}
@@ -435,6 +880,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         notice={selectedNotice}
         onClose={() => setSelectedNotice(null)}
       />
+
+      <ResidentFormModal
+        isOpen={isAddResidentModalOpen}
+        onClose={() => setIsAddResidentModalOpen(false)}
+        residentToEdit={residentToEdit}
+        onSaved={handleResidentSaved}
+      />
+
+      <ResidentDetailModal
+        isOpen={isDetailModalOpen}
+        residentId={detailResidentId}
+        onClose={() => setIsDetailModalOpen(false)}
+        onEdit={(res) => {
+          setResidentToEdit(res);
+          setIsAddResidentModalOpen(true);
+        }}
+        onStatusToggle={(id, newStatus) => {
+          setDirectory((prev) =>
+            prev.map((r) => (r.id === id ? { ...r, account_status: newStatus, status: newStatus } : r))
+          );
+        }}
+      />
     </div>
   );
 };
+

@@ -18,6 +18,8 @@ import {
 import { BrandLogo } from '../common/BrandLogo';
 import { UserRole } from '../../types/portal';
 
+import { authApi } from '../../api';
+
 interface AuthGatewayProps {
   onLogin: (role: UserRole) => void;
 }
@@ -37,25 +39,68 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ onLogin }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setErrorMsg('');
 
-    setTimeout(() => {
+    try {
+      if (selectedRole === 'resident') {
+        const res = await authApi.login({
+          role: 'resident',
+          flat_number: flatNumber,
+          phone: phone,
+          passcode: passcode,
+        });
+        onLogin(res.role);
+      } else {
+        const res = await authApi.login({
+          role: 'admin',
+          email: adminEmail,
+          password: adminKey,
+        });
+        onLogin(res.role);
+      }
+    } catch (err: any) {
+      console.error('Login error:', err);
+      const detail = err.response?.data?.detail || 'Failed to authenticate. Please check your credentials.';
+      setErrorMsg(detail);
+    } finally {
       setIsLoading(false);
-      onLogin(selectedRole);
-    }, 450);
+    }
   };
 
-  const handleQuickDemoLogin = (role: UserRole) => {
+  const handleQuickDemoLogin = async (role: UserRole) => {
     setSelectedRole(role);
     setIsLoading(true);
-    setTimeout(() => {
+    setErrorMsg('');
+
+    try {
+      if (role === 'resident') {
+        const res = await authApi.login({
+          role: 'resident',
+          flat_number: 'Tower B · 704',
+          phone: '+91 98765 43210',
+          passcode: '••••••',
+        });
+        onLogin(res.role);
+      } else {
+        const res = await authApi.login({
+          role: 'admin',
+          email: 'admin@mapleheights.org',
+          password: '••••••••••••',
+        });
+        onLogin(res.role);
+      }
+    } catch (err: any) {
+      console.error('Demo login error:', err);
+      const detail = err.response?.data?.detail || 'Demo login failed. Make sure backend is running.';
+      setErrorMsg(detail);
+    } finally {
       setIsLoading(false);
-      onLogin(role);
-    }, 300);
+    }
   };
+
 
   return (
     <div className="min-h-screen w-full bg-[#0e0f12] flex flex-col lg:flex-row overflow-x-hidden">

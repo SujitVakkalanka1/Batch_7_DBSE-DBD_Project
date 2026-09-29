@@ -1,0 +1,373 @@
+{
+  "info": {
+    "_postman_id": "898a1834-0371-460b-889a-09893457a1b2",
+    "name": "Society and Apartment Management Portal API",
+    "description": "Comprehensive REST API Collection for Society Management Portal (FastAPI + MongoDB + JWT)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "01. Authentication",
+      "item": [
+        {
+          "name": "Resident Login (Flat & PIN)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"resident\",\n  \"flat_number\": \"Tower B · 704\",\n  \"phone\": \"+91 98765 43210\",\n  \"passcode\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Admin Login (Email & Passkey)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"admin\",\n  \"email\": \"admin@mapleheights.org\",\n  \"password\": \"admin123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Get Authenticated User Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{resident_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/me",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "me"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "02. Residents & Flats",
+      "item": [
+        {
+          "name": "Get My Resident Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{resident_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/residents/me",
+              "host": ["{{base_url}}"],
+              "path": ["api", "residents", "me"]
+            }
+          }
+        },
+        {
+          "name": "Admin: List All Residents Directory",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/residents",
+              "host": ["{{base_url}}"],
+              "path": ["api", "residents"]
+            }
+          }
+        },
+        {
+          "name": "List All Flats Registry",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{resident_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/flats",
+              "host": ["{{base_url}}"],
+              "path": ["api", "flats"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03. Payments & Maintenance",
+      "item": [
+        {
+          "name": "Get Resident Dues & Invoices",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{resident_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/payments/my",
+              "host": ["{{base_url}}"],
+              "path": ["api", "payments", "my"]
+            }
+          }
+        },
+        {
+          "name": "Pay Maintenance Bill (Simulated)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{resident_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"method\": \"upi\",\n  \"upi_id\": \"sujit@okhdfcbank\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/payments/PAY-SEP-26/pay",
+              "host": ["{{base_url}}"],
+              "path": ["api", "payments", "PAY-SEP-26", "pay"]
+            }
+          }
+        },
+        {
+          "name": "Admin: Export Society Ledger CSV",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/payments/export",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "payments", "export"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "04. Complaints & Helpdesk",
+      "item": [
+        {
+          "name": "Raise Maintenance Complaint",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{resident_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Water leakage in utility balcony pipe\",\n  \"category\": \"Plumbing\",\n  \"urgency\": \"High\",\n  \"description\": \"Water dripping continuously near washing machine outlet.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/complaints",
+              "host": ["{{base_url}}"],
+              "path": ["api", "complaints"]
+            }
+          }
+        },
+        {
+          "name": "Get Resident Complaints Log",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{resident_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/complaints/my",
+              "host": ["{{base_url}}"],
+              "path": ["api", "complaints", "my"]
+            }
+          }
+        },
+        {
+          "name": "Admin: Update Complaint Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"In Progress\",\n  \"resolution_notes\": \"Technician assigned to inspect pipe.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/admin/complaints/TKT-1082/status",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "complaints", "TKT-1082", "status"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "05. Visitor Gate-Passes",
+      "item": [
+        {
+          "name": "Generate Visitor Gate Pass",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{resident_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"visitorName\": \"Zomato Delivery Agent\",\n  \"visitorPhone\": \"+91 98112 34567\",\n  \"purpose\": \"Delivery\",\n  \"validDate\": \"Today\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/gate-passes",
+              "host": ["{{base_url}}"],
+              "path": ["api", "gate-passes"]
+            }
+          }
+        },
+        {
+          "name": "Get My Active Gate Passes",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{resident_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/gate-passes/my",
+              "host": ["{{base_url}}"],
+              "path": ["api", "gate-passes", "my"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "06. Amenity Bookings",
+      "item": [
+        {
+          "name": "List Society Amenities",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{resident_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/amenities",
+              "host": ["{{base_url}}"],
+              "path": ["api", "amenities"]
+            }
+          }
+        },
+        {
+          "name": "Reserve Society Amenity",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{resident_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amenityName\": \"Tennis Court\",\n  \"date\": \"2026-10-05\",\n  \"timeSlot\": \"06:00 AM - 08:00 AM\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/bookings",
+              "host": ["{{base_url}}"],
+              "path": ["api", "bookings"]
+            }
+          }
+        },
+        {
+          "name": "Get My Bookings",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{resident_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/bookings/my",
+              "host": ["{{base_url}}"],
+              "path": ["api", "bookings", "my"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "07. Notices & Broadcasts",
+      "item": [
+        {
+          "name": "List All Notices",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{resident_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/notices",
+              "host": ["{{base_url}}"],
+              "path": ["api", "notices"]
+            }
+          }
+        },
+        {
+          "name": "Admin: Publish Broadcast Notice",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Fire Safety Drill & Smoke Detector Inspection\",\n  \"body\": \"The annual mandatory fire evacuation mock drill is scheduled for Sunday 10:00 AM. Please participate.\",\n  \"eyebrow\": \"BROADCAST · ALL TOWERS\",\n  \"priority\": \"urgent\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/notices",
+              "host": ["{{base_url}}"],
+              "path": ["api", "notices"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "08. Admin Analytics",
+      "item": [
+        {
+          "name": "Get Admin Dashboard Metrics",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "dashboard"]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "base_url", "value": "http://127.0.0.1:8000" },
+    { "key": "resident_token", "value": "" },
+    { "key": "admin_token", "value": "" }
+  ]
+}

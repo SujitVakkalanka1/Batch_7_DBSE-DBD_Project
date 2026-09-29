@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { X, Megaphone, Send, CheckCircle2, ShieldAlert } from 'lucide-react';
 import { AnnouncementItem } from '../../types/portal';
 
+import { noticesApi } from '../../api';
+
 interface BroadcastModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -18,25 +20,34 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
   const [body, setBody] = useState('');
   const [isUrgent, setIsUrgent] = useState(false);
   const [isDone, setIsDone] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const notice: AnnouncementItem = {
-      id: `ann-${Date.now()}`,
-      eyebrow: isUrgent ? 'URGENT BROADCAST · RESIDENTS' : eyebrow,
-      title,
-      body,
-      timestamp: 'JUST NOW',
-      cta: 'View details',
-      priority: isUrgent ? 'urgent' : 'normal',
-      author: 'Estate Management',
-      date: 'Today',
-    };
-    onBroadcast(notice);
-    setIsDone(true);
+    setIsSubmitting(true);
+    setErrorMsg('');
+
+    try {
+      const createdNotice = await noticesApi.createNotice({
+        title,
+        body,
+        eyebrow: isUrgent ? 'URGENT BROADCAST · RESIDENTS' : eyebrow,
+        priority: isUrgent ? 'urgent' : 'normal',
+        target_audience: eyebrow.replace('BROADCAST · ', '').replace('NOTICE · ', ''),
+      });
+      onBroadcast(createdNotice);
+      setIsDone(true);
+    } catch (err: any) {
+      console.error('Error broadcasting notice:', err);
+      setErrorMsg(err.response?.data?.detail || 'Failed to dispatch broadcast notice.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
@@ -142,12 +153,25 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
                 </label>
               </div>
 
+              {errorMsg && (
+                <div className="p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 text-xs">
+                  {errorMsg}
+                </div>
+              )}
+
               <button
                 type="submit"
-                className="w-full py-3.5 px-6 rounded-xl bg-[#CCFF00] text-black font-display font-extrabold text-xs uppercase tracking-[0.14em] hover:bg-[#bceb00] active:scale-[0.99] transition-all shadow-lg shadow-[#CCFF00]/20 flex items-center justify-center gap-2"
+                disabled={isSubmitting}
+                className="w-full py-3.5 px-6 rounded-xl bg-[#CCFF00] text-black font-display font-extrabold text-xs uppercase tracking-[0.14em] hover:bg-[#bceb00] active:scale-[0.99] transition-all shadow-lg shadow-[#CCFF00]/20 flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                <Send size={16} />
-                <span>Publish to Resident Boards</span>
+                {isSubmitting ? (
+                  <span className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <Send size={16} />
+                    <span>Publish to Resident Boards</span>
+                  </>
+                )}
               </button>
             </form>
           )}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Search,
   Bell,
@@ -17,17 +17,20 @@ import {
   LogOut,
   Sparkles,
   QrCode,
-  FileText,
   User,
   Building,
   Info,
+  Users,
+  UserPlus,
+  Trash2,
+  Edit3,
 } from 'lucide-react';
 import { BrandLogo } from '../common/BrandLogo';
 import { BottomNavDock, ResidentTab } from '../navigation/BottomNavDock';
 import {
-  residentProfile,
+  residentProfile as defaultResidentProfile,
   residentHighlights,
-  residentAnnouncements,
+  residentAnnouncements as defaultAnnouncements,
   residentQuickActions,
   initialTickets,
   initialGatePasses,
@@ -35,17 +38,29 @@ import {
   initialPayments,
 } from '../../data/mockData';
 import {
+  UserProfile,
   ComplaintTicket,
   GatePass,
   AmenityBooking,
   PaymentRecord,
   AnnouncementItem,
+  FamilyMember,
 } from '../../types/portal';
+import {
+  residentsApi,
+  paymentsApi,
+  complaintsApi,
+  gatePassesApi,
+  noticesApi,
+  bookingsApi,
+  familyMembersApi,
+} from '../../api';
 import { PaymentModal } from '../modals/PaymentModal';
 import { ComplaintModal } from '../modals/ComplaintModal';
 import { GatePassModal } from '../modals/GatePassModal';
 import { AmenityModal } from '../modals/AmenityModal';
 import { NoticeDetailModal } from '../modals/NoticeDetailModal';
+import { FamilyMemberModal } from '../modals/FamilyMemberModal';
 
 interface ResidentDashboardProps {
   onLogout: () => void;
@@ -56,6 +71,13 @@ export const ResidentDashboard: React.FC<ResidentDashboardProps> = ({ onLogout }
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // User Profile & Family Members
+  const [profile, setProfile] = useState<UserProfile>(defaultResidentProfile);
+  const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
+  const [isFamilyModalOpen, setIsFamilyModalOpen] = useState(false);
+  const [memberToEdit, setMemberToEdit] = useState<FamilyMember | null>(null);
+  const [isDeletingMemberId, setIsDeletingMemberId] = useState<string | null>(null);
+
   // Modals state
   const [isPayModalOpen, setIsPayModalOpen] = useState(false);
   const [isComplaintModalOpen, setIsComplaintModalOpen] = useState(false);
@@ -63,12 +85,129 @@ export const ResidentDashboard: React.FC<ResidentDashboardProps> = ({ onLogout }
   const [isAmenityModalOpen, setIsAmenityModalOpen] = useState(false);
   const [selectedNotice, setSelectedNotice] = useState<AnnouncementItem | null>(null);
 
-  // Dynamic Data
+  // Dynamic Data from Backend API
   const [tickets, setTickets] = useState<ComplaintTicket[]>(initialTickets);
   const [gatePasses, setGatePasses] = useState<GatePass[]>(initialGatePasses);
   const [amenityBookings, setAmenityBookings] = useState<AmenityBooking[]>(initialAmenityBookings);
   const [payments, setPayments] = useState<PaymentRecord[]>(initialPayments);
-  const [announcements, setAnnouncements] = useState<AnnouncementItem[]>(residentAnnouncements);
+  const [announcements, setAnnouncements] = useState<AnnouncementItem[]>(defaultAnnouncements);
+  const [isLoadingData, setIsLoadingData] = useState(false);
+
+  // Fetch live data from backend APIs
+  const fetchResidentData = async () => {
+    setIsLoadingData(true);
+    try {
+      // 1. Fetch Profile
+      try {
+        const userProfile = await residentsApi.getMyProfile();
+        setProfile(userProfile);
+      } catch (err) {
+        console.warn('Using cached resident profile', err);
+      }
+
+      // 2. Fetch Family Members
+      try {
+        const myFamily = await familyMembersApi.getMyFamilyMembers();
+        if (myFamily) {
+          setFamilyMembers(myFamily);
+        }
+      } catch (err) {
+        console.warn('Error fetching family members:', err);
+      }
+
+      // 3. Fetch Payments
+      try {
+        const myPayments = await paymentsApi.getMyPayments();
+        if (myPayments && myPayments.length > 0) {
+          setPayments(myPayments);
+        }
+      } catch (err) {
+        console.warn('Error fetching payments:', err);
+      }
+
+      // 4. Fetch Complaints
+      try {
+        const myComplaints = await complaintsApi.getMyComplaints();
+        if (myComplaints && myComplaints.length > 0) {
+          setTickets(myComplaints);
+        }
+      } catch (err) {
+        console.warn('Error fetching complaints:', err);
+      }
+
+      // 5. Fetch Gate Passes
+      try {
+        const myPasses = await gatePassesApi.getMyGatePasses();
+        if (myPasses && myPasses.length > 0) {
+          setGatePasses(myPasses);
+        }
+      } catch (err) {
+        console.warn('Error fetching gate passes:', err);
+      }
+
+      // 6. Fetch Notices
+      try {
+        const allNotices = await noticesApi.getAllNotices();
+        if (allNotices && allNotices.length > 0) {
+          setAnnouncements(allNotices);
+        }
+      } catch (err) {
+        console.warn('Error fetching notices:', err);
+      }
+
+      // 7. Fetch Bookings
+      try {
+        const myBookings = await bookingsApi.getMyBookings();
+        if (myBookings && myBookings.length > 0) {
+          setAmenityBookings(myBookings);
+        }
+      } catch (err) {
+        console.warn('Error fetching bookings:', err);
+      }
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
+  const handleOpenAddFamily = () => {
+    setMemberToEdit(null);
+    setIsFamilyModalOpen(true);
+  };
+
+  const handleOpenEditFamily = (member: FamilyMember) => {
+    setMemberToEdit(member);
+    setIsFamilyModalOpen(true);
+  };
+
+  const handleFamilySaved = (savedMember: FamilyMember) => {
+    setFamilyMembers((prev) => {
+      const exists = prev.some((m) => m.id === savedMember.id);
+      if (exists) {
+        return prev.map((m) => (m.id === savedMember.id ? savedMember : m));
+      }
+      return [...prev, savedMember];
+    });
+  };
+
+  const handleDeleteFamilyMember = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to remove ${name} from your registered family members?`)) {
+      return;
+    }
+    setIsDeletingMemberId(id);
+    try {
+      await familyMembersApi.deleteFamilyMember(id);
+      setFamilyMembers((prev) => prev.filter((m) => m.id !== id));
+    } catch (err: any) {
+      console.error('Error removing family member:', err);
+      alert(err.response?.data?.detail || 'Failed to remove family member.');
+    } finally {
+      setIsDeletingMemberId(null);
+    }
+  };
+
+  useEffect(() => {
+    fetchResidentData();
+  }, []);
 
   const handleQuickAction = (key: string) => {
     if (key === 'pay') setIsPayModalOpen(true);
@@ -85,6 +224,10 @@ export const ResidentDashboard: React.FC<ResidentDashboardProps> = ({ onLogout }
           : p
       )
     );
+    // Refresh payments from backend
+    paymentsApi.getMyPayments().then((data) => {
+      if (data && data.length > 0) setPayments(data);
+    }).catch(console.error);
   };
 
   const handleTicketAdded = (newTicket: ComplaintTicket) => {
@@ -99,6 +242,45 @@ export const ResidentDashboard: React.FC<ResidentDashboardProps> = ({ onLogout }
     setAmenityBookings((prev) => [newBooking, ...prev]);
   };
 
+  // Find latest pending payment or default
+  const pendingPayment = useMemo(() => {
+    return payments.find((p) => p.status === 'Pending') || payments[0];
+  }, [payments]);
+
+  // Filtered announcements based on search and category
+  const filteredAnnouncements = useMemo(() => {
+    return announcements.filter((ann) => {
+      const matchesSearch =
+        searchQuery === '' ||
+        ann.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        ann.body.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        ann.eyebrow.toLowerCase().includes(searchQuery.toLowerCase());
+
+      if (!matchesSearch) return false;
+
+      if (selectedCategory === 'All') return true;
+      if (selectedCategory === 'Helpdesk') return ann.eyebrow.toLowerCase().includes('help') || ann.eyebrow.toLowerCase().includes('notice');
+      if (selectedCategory === 'Facilities') return ann.eyebrow.toLowerCase().includes('facility') || ann.body.toLowerCase().includes('facility') || ann.body.toLowerCase().includes('maintenance');
+      if (selectedCategory === 'Polls') return ann.title.toLowerCase().includes('poll') || ann.eyebrow.toLowerCase().includes('event');
+      if (selectedCategory === 'Gate-pass') return ann.eyebrow.toLowerCase().includes('security') || ann.body.toLowerCase().includes('gate');
+      if (selectedCategory === 'Payments') return ann.body.toLowerCase().includes('due') || ann.body.toLowerCase().includes('maintenance');
+
+      return true;
+    });
+  }, [announcements, searchQuery, selectedCategory]);
+
+  // Filtered tickets based on search query
+  const filteredTickets = useMemo(() => {
+    if (!searchQuery) return tickets;
+    const q = searchQuery.toLowerCase();
+    return tickets.filter((t) =>
+      t.title.toLowerCase().includes(q) ||
+      t.description.toLowerCase().includes(q) ||
+      t.category.toLowerCase().includes(q) ||
+      t.id.toLowerCase().includes(q)
+    );
+  }, [tickets, searchQuery]);
+
   const categories = ['All', 'Helpdesk', 'Facilities', 'Polls', 'Gate-pass', 'Payments'];
 
   return (
@@ -109,7 +291,7 @@ export const ResidentDashboard: React.FC<ResidentDashboardProps> = ({ onLogout }
           {/* Resident Identity */}
           <div className="flex items-center gap-3.5">
             <div className="w-11 h-11 rounded-full bg-[#e8e6e1] border border-zinc-300 flex items-center justify-center font-display font-bold text-sm text-zinc-900 shadow-inner">
-              {residentProfile.initials}
+              {profile.initials || 'SK'}
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -117,13 +299,13 @@ export const ResidentDashboard: React.FC<ResidentDashboardProps> = ({ onLogout }
                   Resident
                 </span>
                 <span className="text-xs text-zinc-500 font-medium">
-                  {residentProfile.residency}
+                  {profile.residency || 'Maple Heights Society'}
                 </span>
               </div>
               <h1 className="font-display text-xl font-bold text-zinc-950 leading-tight">
-                Hello, {residentProfile.name}.
+                Hello, {profile.name}.
               </h1>
-              <span className="text-xs text-zinc-600">{residentProfile.unit}</span>
+              <span className="text-xs text-zinc-600">{profile.unit || 'Tower B · Flat 704'}</span>
             </div>
           </div>
 
@@ -142,7 +324,7 @@ export const ResidentDashboard: React.FC<ResidentDashboardProps> = ({ onLogout }
 
             <button
               type="button"
-              onClick={() => setSelectedNotice(announcements[0])}
+              onClick={() => setSelectedNotice(announcements[0] || defaultAnnouncements[0])}
               className="p-2.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 relative transition-colors"
               title="Notifications"
             >
@@ -195,12 +377,14 @@ export const ResidentDashboard: React.FC<ResidentDashboardProps> = ({ onLogout }
 
                 <div className="mt-4">
                   <div className="font-display text-4xl sm:text-5xl font-extrabold tracking-tight">
-                    ₹4,850
+                    {pendingPayment ? pendingPayment.amount : '₹4,850'}
                   </div>
                   <div className="flex items-center gap-2 mt-1.5">
-                    <span className="text-xs font-bold text-black/70">Due 10 Sep</span>
-                    <span className="text-[10px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded-full bg-black text-[#CCFF00]">
-                      Payable Now
+                    <span className="text-xs font-bold text-black/70">
+                      {pendingPayment?.status === 'Paid' ? `Paid on ${pendingPayment.paidDate || 'Today'}` : `Due ${pendingPayment?.dueDate || '10 Sep'}`}
+                    </span>
+                    <span className={`text-[10px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded-full ${pendingPayment?.status === 'Paid' ? 'bg-black/20 text-black' : 'bg-black text-[#CCFF00]'}`}>
+                      {pendingPayment?.status === 'Paid' ? 'Cleared' : 'Payable Now'}
                     </span>
                   </div>
                 </div>
@@ -222,35 +406,35 @@ export const ResidentDashboard: React.FC<ResidentDashboardProps> = ({ onLogout }
                     01
                   </div>
                   <div className="flex items-center gap-2 mt-1.5 text-xs text-zinc-400">
-                    <span>Parking bay B-21 (Unauthorized guest vehicle flag)</span>
+                    <span>Parking bay {profile.parking_bay?.split(' ')[1] || 'B-21'} (Unauthorized guest vehicle flag)</span>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Announcement Banner */}
-            {announcements.length > 0 && (
+            {filteredAnnouncements.length > 0 && (
               <div
-                onClick={() => setSelectedNotice(announcements[0])}
+                onClick={() => setSelectedNotice(filteredAnnouncements[0])}
                 className="p-5 sm:p-6 rounded-3xl bg-[#16171d] border border-white/10 hover:border-white/20 transition-all cursor-pointer group"
               >
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-[#CCFF00] animate-pulse" />
                     <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#CCFF00] font-mono">
-                      {announcements[0].eyebrow}
+                      {filteredAnnouncements[0].eyebrow}
                     </span>
                   </div>
                   <span className="text-[11px] font-mono text-zinc-400">
-                    {announcements[0].timestamp}
+                    {filteredAnnouncements[0].timestamp}
                   </span>
                 </div>
 
                 <h3 className="font-display text-lg sm:text-xl font-bold text-white group-hover:text-[#CCFF00] transition-colors mb-1.5">
-                  {announcements[0].title}
+                  {filteredAnnouncements[0].title}
                 </h3>
                 <p className="text-zinc-400 text-xs sm:text-sm line-clamp-2 leading-relaxed">
-                  {announcements[0].body}
+                  {filteredAnnouncements[0].body}
                 </p>
 
                 <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-xs text-[#CCFF00] font-bold uppercase tracking-wider">
@@ -338,20 +522,24 @@ export const ResidentDashboard: React.FC<ResidentDashboardProps> = ({ onLogout }
                 </div>
 
                 <div className="space-y-2.5">
-                  {gatePasses.slice(0, 2).map((gp) => (
-                    <div
-                      key={gp.id}
-                      className="p-3 rounded-xl bg-white/[0.03] border border-white/10 flex items-center justify-between text-xs"
-                    >
-                      <div>
-                        <span className="font-bold text-white block">{gp.visitorName}</span>
-                        <span className="text-zinc-400 text-[11px]">{gp.purpose} · {gp.validTime}</span>
+                  {gatePasses.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-zinc-500">No active gate passes</div>
+                  ) : (
+                    gatePasses.slice(0, 2).map((gp) => (
+                      <div
+                        key={gp.id}
+                        className="p-3 rounded-xl bg-white/[0.03] border border-white/10 flex items-center justify-between text-xs"
+                      >
+                        <div>
+                          <span className="font-bold text-white block">{gp.visitorName}</span>
+                          <span className="text-zinc-400 text-[11px]">{gp.purpose} · {gp.validTime}</span>
+                        </div>
+                        <span className="font-mono px-2.5 py-1 rounded bg-black text-[#CCFF00] font-bold border border-white/10">
+                          {gp.passCode}
+                        </span>
                       </div>
-                      <span className="font-mono px-2.5 py-1 rounded bg-black text-[#CCFF00] font-bold border border-white/10">
-                        {gp.passCode}
-                      </span>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </div>
 
@@ -374,28 +562,32 @@ export const ResidentDashboard: React.FC<ResidentDashboardProps> = ({ onLogout }
                 </div>
 
                 <div className="space-y-2.5">
-                  {tickets.slice(0, 2).map((t) => (
-                    <div
-                      key={t.id}
-                      className="p-3 rounded-xl bg-white/[0.03] border border-white/10 flex items-center justify-between text-xs"
-                    >
-                      <div className="max-w-[70%]">
-                        <span className="font-bold text-white block truncate">{t.title}</span>
-                        <span className="text-zinc-400 text-[11px]">{t.category} · {t.date}</span>
-                      </div>
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                          t.status === 'Resolved'
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                            : t.status === 'In Progress'
-                            ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
-                            : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                        }`}
+                  {tickets.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-zinc-500">No maintenance requests logged</div>
+                  ) : (
+                    tickets.slice(0, 2).map((t) => (
+                      <div
+                        key={t.id}
+                        className="p-3 rounded-xl bg-white/[0.03] border border-white/10 flex items-center justify-between text-xs"
                       >
-                        {t.status}
-                      </span>
-                    </div>
-                  ))}
+                        <div className="max-w-[70%]">
+                          <span className="font-bold text-white block truncate">{t.title}</span>
+                          <span className="text-zinc-400 text-[11px]">{t.category} · {t.date}</span>
+                        </div>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                            t.status === 'Resolved'
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                              : t.status === 'In Progress'
+                              ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
+                              : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                          }`}
+                        >
+                          {t.status}
+                        </span>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             </div>
@@ -421,36 +613,42 @@ export const ResidentDashboard: React.FC<ResidentDashboardProps> = ({ onLogout }
             </div>
 
             <div className="grid grid-cols-1 gap-3">
-              {tickets.map((t) => (
-                <div
-                  key={t.id}
-                  className="p-5 rounded-2xl bg-[#16171d] border border-white/10 hover:border-white/20 transition-all"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-mono text-xs text-[#CCFF00] font-bold">{t.id}</span>
-                        <span className="text-zinc-500 text-xs">· {t.category}</span>
-                        <span className="text-zinc-500 text-xs">· {t.date}</span>
-                      </div>
-                      <h4 className="font-display text-base font-bold text-white mb-1.5">{t.title}</h4>
-                      <p className="text-xs text-zinc-400 leading-relaxed">{t.description}</p>
-                    </div>
-
-                    <span
-                      className={`shrink-0 px-3 py-1 rounded-full text-[11px] font-bold uppercase ${
-                        t.status === 'Resolved'
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                          : t.status === 'In Progress'
-                          ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
-                          : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                      }`}
-                    >
-                      {t.status}
-                    </span>
-                  </div>
+              {filteredTickets.length === 0 ? (
+                <div className="p-8 text-center bg-[#16171d] rounded-2xl border border-white/10 text-zinc-400 text-sm">
+                  No matching maintenance tickets found.
                 </div>
-              ))}
+              ) : (
+                filteredTickets.map((t) => (
+                  <div
+                    key={t.id}
+                    className="p-5 rounded-2xl bg-[#16171d] border border-white/10 hover:border-white/20 transition-all"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-mono text-xs text-[#CCFF00] font-bold">{t.id}</span>
+                          <span className="text-zinc-500 text-xs">· {t.category}</span>
+                          <span className="text-zinc-500 text-xs">· {t.date}</span>
+                        </div>
+                        <h4 className="font-display text-base font-bold text-white mb-1.5">{t.title}</h4>
+                        <p className="text-xs text-zinc-400 leading-relaxed">{t.description}</p>
+                      </div>
+
+                      <span
+                        className={`shrink-0 px-3 py-1 rounded-full text-[11px] font-bold uppercase ${
+                          t.status === 'Resolved'
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                            : t.status === 'In Progress'
+                            ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
+                            : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        }`}
+                      >
+                        {t.status}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
@@ -511,7 +709,7 @@ export const ResidentDashboard: React.FC<ResidentDashboardProps> = ({ onLogout }
                     ) : (
                       <button
                         type="button"
-                        onClick={() => alert(`Downloading official PDF receipt for ${p.billMonth}`)}
+                        onClick={() => alert(`Official Receipt for ${p.billMonth}\nAmount: ${p.amount}\nStatus: Paid\nUnit: ${p.unit || profile.unit}`)}
                         className="py-2 px-3 rounded-xl bg-white/10 hover:bg-white/15 text-xs text-zinc-300 font-bold uppercase flex items-center gap-1.5"
                       >
                         <FileText size={14} />
@@ -534,22 +732,28 @@ export const ResidentDashboard: React.FC<ResidentDashboardProps> = ({ onLogout }
             </div>
 
             <div className="space-y-4">
-              {announcements.map((ann) => (
-                <div
-                  key={ann.id}
-                  onClick={() => setSelectedNotice(ann)}
-                  className="p-5 rounded-2xl bg-[#16171d] border border-white/10 hover:border-white/20 transition-all cursor-pointer"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-extrabold font-mono uppercase px-2 py-0.5 rounded bg-[#CCFF00]/20 text-[#CCFF00]">
-                      {ann.eyebrow}
-                    </span>
-                    <span className="text-xs text-zinc-400 font-mono">{ann.timestamp}</span>
-                  </div>
-                  <h4 className="font-display text-lg font-bold text-white mb-1.5">{ann.title}</h4>
-                  <p className="text-xs text-zinc-300 leading-relaxed line-clamp-2">{ann.body}</p>
+              {filteredAnnouncements.length === 0 ? (
+                <div className="p-8 text-center bg-[#16171d] rounded-2xl border border-white/10 text-zinc-400 text-sm">
+                  No announcements match your search.
                 </div>
-              ))}
+              ) : (
+                filteredAnnouncements.map((ann) => (
+                  <div
+                    key={ann.id}
+                    onClick={() => setSelectedNotice(ann)}
+                    className="p-5 rounded-2xl bg-[#16171d] border border-white/10 hover:border-white/20 transition-all cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-extrabold font-mono uppercase px-2 py-0.5 rounded bg-[#CCFF00]/20 text-[#CCFF00]">
+                        {ann.eyebrow}
+                      </span>
+                      <span className="text-xs text-zinc-400 font-mono">{ann.timestamp}</span>
+                    </div>
+                    <h4 className="font-display text-lg font-bold text-white mb-1.5">{ann.title}</h4>
+                    <p className="text-xs text-zinc-300 leading-relaxed line-clamp-2">{ann.body}</p>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
@@ -562,16 +766,17 @@ export const ResidentDashboard: React.FC<ResidentDashboardProps> = ({ onLogout }
               <p className="text-xs text-zinc-400">Account records registered with Maple Heights Estate Office</p>
             </div>
 
+            {/* Profile Details Card */}
             <div className="p-6 rounded-3xl bg-[#16171d] border border-white/10 space-y-4">
               <div className="flex items-center gap-4 pb-4 border-b border-white/10">
                 <div className="w-16 h-16 rounded-full bg-[#CCFF00] text-black font-display font-extrabold text-xl flex items-center justify-center">
-                  {residentProfile.initials}
+                  {profile.initials || 'SK'}
                 </div>
                 <div>
-                  <h3 className="font-display text-xl font-bold text-white">{residentProfile.name} Kumar</h3>
-                  <span className="text-xs text-zinc-400">{residentProfile.unit}</span>
+                  <h3 className="font-display text-xl font-bold text-white">{profile.name}</h3>
+                  <span className="text-xs text-zinc-400">{profile.unit || 'Tower B · Flat 704'}</span>
                   <span className="text-[10px] block text-[#CCFF00] font-bold uppercase mt-0.5">
-                    Owner Resident · Tower B
+                    {profile.resident_type || 'Owner Resident'} · Maple Heights
                   </span>
                 </div>
               </div>
@@ -579,36 +784,127 @@ export const ResidentDashboard: React.FC<ResidentDashboardProps> = ({ onLogout }
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between py-1 border-b border-white/5">
                   <span className="text-zinc-400 text-xs">Registered Phone</span>
-                  <span className="text-white font-mono text-xs">{residentProfile.phone}</span>
+                  <span className="text-white font-mono text-xs">{profile.phone}</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-white/5">
                   <span className="text-zinc-400 text-xs">Registered Email</span>
-                  <span className="text-white font-mono text-xs">{residentProfile.email}</span>
+                  <span className="text-white font-mono text-xs">{profile.email}</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-white/5">
                   <span className="text-zinc-400 text-xs">Allocated Parking Slot</span>
-                  <span className="text-white font-bold text-xs">Bay B-21 (Basement 1)</span>
+                  <span className="text-white font-bold text-xs">{profile.parking_bay || 'Bay B-21 (Basement 1)'}</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-white/5">
                   <span className="text-zinc-400 text-xs">Registered Vehicle</span>
-                  <span className="text-white font-mono text-xs">MH-02-CD-8842 (Sedan)</span>
+                  <span className="text-white font-mono text-xs">{profile.vehicle_number || 'MH-02-CD-8842 (Sedan)'}</span>
                 </div>
                 <div className="flex justify-between py-1">
                   <span className="text-zinc-400 text-xs">Intercom Extension</span>
-                  <span className="text-white font-mono text-xs">Ext. 704</span>
+                  <span className="text-white font-mono text-xs">{profile.intercom_ext || 'Ext. 704'}</span>
                 </div>
               </div>
+            </div>
 
-              <div className="pt-4 border-t border-white/10">
+            {/* FAMILY MEMBERS SECTION */}
+            <div className="p-6 rounded-3xl bg-[#16171d] border border-white/10 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-[#CCFF00]/15 text-[#CCFF00]">
+                    <Users size={18} />
+                  </div>
+                  <div>
+                    <h3 className="font-display text-lg font-bold text-white">Family Members</h3>
+                    <span className="text-[11px] text-zinc-400">
+                      Registered co-occupants ({familyMembers.length})
+                    </span>
+                  </div>
+                </div>
                 <button
                   type="button"
-                  onClick={onLogout}
-                  className="w-full py-3 px-4 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-colors"
+                  onClick={handleOpenAddFamily}
+                  className="py-2 px-3.5 rounded-xl bg-[#CCFF00] text-black font-display font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 hover:bg-[#bceb00] transition-colors shadow-md shadow-[#CCFF00]/15"
                 >
-                  <LogOut size={16} />
-                  <span>Log out of Resident Portal</span>
+                  <UserPlus size={15} />
+                  <span>+ Add Member</span>
                 </button>
               </div>
+
+              {familyMembers.length === 0 ? (
+                <div className="py-8 text-center text-zinc-500 text-xs border border-dashed border-white/10 rounded-2xl p-4">
+                  <Users size={28} className="mx-auto mb-2 text-zinc-600 opacity-60" />
+                  <p className="font-semibold text-zinc-400 mb-1">No family members registered yet.</p>
+                  <p className="text-[11px] text-zinc-500">
+                    Add spouse, children, parents, or co-occupants living in this unit.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {familyMembers.map((member) => (
+                    <div
+                      key={member.id}
+                      className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-all flex flex-col justify-between"
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-display font-bold text-sm text-white">{member.name}</h4>
+                          <span className="px-2 py-0.5 rounded bg-[#CCFF00]/15 text-[#CCFF00] text-[10px] font-extrabold uppercase">
+                            {member.relationship}
+                          </span>
+                        </div>
+
+                        <div className="text-xs text-zinc-400 space-y-1 pt-1">
+                          {member.age !== undefined && member.age !== null && (
+                            <div>Age: <span className="text-zinc-200">{member.age} yrs</span></div>
+                          )}
+                          {member.phone && (
+                            <div className="font-mono text-zinc-300">📞 {member.phone}</div>
+                          )}
+                          {member.email && (
+                            <div className="font-mono text-zinc-300 truncate">✉️ {member.email}</div>
+                          )}
+                          {member.emergency_contact && (
+                            <span className="inline-block mt-1 text-[9px] px-2 py-0.5 rounded bg-red-500/20 text-red-400 font-bold uppercase">
+                              Emergency Contact
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="pt-3 mt-3 border-t border-white/5 flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditFamily(member)}
+                          className="py-1.5 px-3 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 text-xs font-semibold flex items-center gap-1 transition-colors"
+                        >
+                          <Edit3 size={13} />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteFamilyMember(member.id, member.name)}
+                          disabled={isDeletingMemberId === member.id}
+                          className="py-1.5 px-3 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-semibold flex items-center gap-1 transition-colors disabled:opacity-50"
+                        >
+                          <Trash2 size={13} />
+                          <span>{isDeletingMemberId === member.id ? 'Removing...' : 'Remove'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Logout Card */}
+            <div className="p-4 rounded-2xl bg-[#16171d] border border-white/10">
+              <button
+                type="button"
+                onClick={onLogout}
+                className="w-full py-3 px-4 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-colors"
+              >
+                <LogOut size={16} />
+                <span>Log out of Resident Portal</span>
+              </button>
             </div>
           </div>
         )}
@@ -625,7 +921,7 @@ export const ResidentDashboard: React.FC<ResidentDashboardProps> = ({ onLogout }
       <PaymentModal
         isOpen={isPayModalOpen}
         onClose={() => setIsPayModalOpen(false)}
-        payment={payments[0]}
+        payment={pendingPayment}
         onSuccess={handlePaymentSuccess}
       />
 
@@ -651,6 +947,14 @@ export const ResidentDashboard: React.FC<ResidentDashboardProps> = ({ onLogout }
         notice={selectedNotice}
         onClose={() => setSelectedNotice(null)}
       />
+
+      <FamilyMemberModal
+        isOpen={isFamilyModalOpen}
+        onClose={() => setIsFamilyModalOpen(false)}
+        memberToEdit={memberToEdit}
+        onSaved={handleFamilySaved}
+      />
     </div>
   );
 };
+

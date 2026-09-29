@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { X, Headset, CheckCircle2, AlertTriangle, UploadCloud } from 'lucide-react';
 import { ComplaintTicket } from '../../types/portal';
 
+import { complaintsApi } from '../../api';
+
 interface ComplaintModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -19,30 +21,32 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
   const [description, setDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setErrorMsg('');
 
-    setTimeout(() => {
-      const newTicket: ComplaintTicket = {
-        id: `TKT-${Math.floor(1000 + Math.random() * 9000)}`,
+    try {
+      const createdTicket = await complaintsApi.createComplaint({
         title,
         category,
         urgency,
         description,
-        status: 'Pending',
-        unit: 'Tower B · Flat 704',
-        submittedBy: 'Sujit Kumar',
-        date: 'Today',
-      };
-      onSubmit(newTicket);
-      setIsSubmitting(false);
+      });
+      onSubmit(createdTicket);
       setIsSuccess(true);
-    }, 500);
+    } catch (err: any) {
+      console.error('Error creating complaint:', err);
+      setErrorMsg(err.response?.data?.detail || 'Failed to submit complaint. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
@@ -164,6 +168,12 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
                   required
                 />
               </div>
+
+              {errorMsg && (
+                <div className="p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 text-xs">
+                  {errorMsg}
+                </div>
+              )}
 
               <button
                 type="submit"
