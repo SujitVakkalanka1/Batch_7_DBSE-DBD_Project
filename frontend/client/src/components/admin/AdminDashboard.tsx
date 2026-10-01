@@ -15,6 +15,7 @@ import {
   LogOut,
   SlidersHorizontal,
   Building,
+  Building2,
   DollarSign,
   Download,
   UserPlus,
@@ -23,6 +24,9 @@ import {
   Edit2,
   Eye,
   Filter,
+  ArrowRightLeft,
+  Settings2,
+  Layers,
 } from 'lucide-react';
 import { BrandLogo } from '../common/BrandLogo';
 import { BottomNavDock, AdminTab } from '../navigation/BottomNavDock';
@@ -33,7 +37,7 @@ import {
   adminQuickActions,
   initialTickets,
 } from '../../data/mockData';
-import { ComplaintTicket, AnnouncementItem } from '../../types/portal';
+import { ComplaintTicket, AnnouncementItem, TowerInfo } from '../../types/portal';
 import {
   adminApi,
   AdminDashboardMetrics,
@@ -41,12 +45,15 @@ import {
   noticesApi,
   residentsApi,
   paymentsApi,
+  towersApi,
   ResidentDirectoryItem,
 } from '../../api';
 import { BroadcastModal } from '../modals/BroadcastModal';
 import { NoticeDetailModal } from '../modals/NoticeDetailModal';
 import { ResidentFormModal } from '../modals/ResidentFormModal';
 import { ResidentDetailModal } from '../modals/ResidentDetailModal';
+import { TowerModal } from '../modals/TowerModal';
+import { TransferResidentModal } from '../modals/TransferResidentModal';
 
 interface AdminDashboardProps {
   onLogout: () => void;
@@ -81,6 +88,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
   const [isExportingCsv, setIsExportingCsv] = useState(false);
 
+  // Tower Management state
+  const [towers, setTowers] = useState<TowerInfo[]>([]);
+  const [isTowerModalOpen, setIsTowerModalOpen] = useState(false);
+  const [towerToEdit, setTowerToEdit] = useState<TowerInfo | null>(null);
+
+  // Transfer Resident state
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [residentToTransfer, setResidentToTransfer] = useState<ResidentDirectoryItem | null>(null);
+
   // Resident Management state
   const [residentTowerFilter, setResidentTowerFilter] = useState('All');
   const [residentStatusFilter, setResidentStatusFilter] = useState('All');
@@ -103,7 +119,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         console.warn('Error fetching metrics:', err);
       }
 
-      // 2. All Complaints
+      // 2. Towers list with live occupancy & vacancy stats
+      try {
+        const towerList = await towersApi.getTowers();
+        setTowers(towerList);
+      } catch (err) {
+        console.warn('Error fetching towers:', err);
+      }
+
+      // 3. All Complaints
       try {
         const allTickets = await complaintsApi.getAllComplaints();
         if (allTickets && allTickets.length > 0) {
@@ -113,7 +137,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         console.warn('Error fetching complaints:', err);
       }
 
-      // 3. Notices
+      // 4. Notices
       try {
         const allNotices = await noticesApi.getAllNotices();
         if (allNotices && allNotices.length > 0) {
@@ -123,7 +147,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         console.warn('Error fetching notices:', err);
       }
 
-      // 4. Resident Directory
+      // 5. Resident Directory
       await fetchResidentsList(residentTowerFilter, residentStatusFilter, residentSearchQuery);
     } catch (err) {
       console.error('Failed to load admin data:', err);
@@ -619,61 +643,141 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         {/* ==================== TAB: MANAGEMENT / SETTINGS ==================== */}
         {activeTab === 'settings' && (
           <div className="space-y-6 animate-fade-in">
-            {/* Header with Title and Add Resident Button */}
+            {/* Header with Title, Add Tower, and Add Resident Buttons */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h2 className="font-display text-2xl font-bold">Resident & Family Member Directory</h2>
                 <p className="text-xs text-zinc-400">
-                  Manage resident records, tower allocations, status, and view registered family members
+                  Manage resident records, tower allocations, capacity limits, vacant flats, and family members
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={handleOpenAddResident}
-                className="py-2.5 px-4 rounded-xl bg-[#CCFF00] text-black font-display font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-[#CCFF00]/20 hover:bg-[#bceb00] transition-colors shrink-0"
-              >
-                <UserPlus size={16} />
-                <span>Add Resident</span>
-              </button>
+              <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTowerToEdit(null);
+                    setIsTowerModalOpen(true);
+                  }}
+                  className="py-2.5 px-3.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-display font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition-colors border border-white/10"
+                >
+                  <Building2 size={15} className="text-[#CCFF00]" />
+                  <span>Manage Towers</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenAddResident}
+                  className="py-2.5 px-4 rounded-xl bg-[#CCFF00] text-black font-display font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-[#CCFF00]/20 hover:bg-[#bceb00] transition-colors"
+                >
+                  <UserPlus size={16} />
+                  <span>Add Resident</span>
+                </button>
+              </div>
             </div>
 
-            {/* Tower Occupancy Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div
-                onClick={() => handleTowerFilterChange('Tower A')}
-                className={`p-4 rounded-2xl border transition-all cursor-pointer ${
-                  residentTowerFilter === 'Tower A'
-                    ? 'bg-[#CCFF00]/10 border-[#CCFF00]'
-                    : 'bg-[#16171d] border-white/10 hover:border-white/20'
-                }`}
-              >
-                <span className="text-xs text-zinc-400 block mb-1 font-mono">Tower A</span>
-                <span className="font-display text-xl font-bold text-white">84 Units</span>
-                <span className="text-[10px] text-emerald-400 block mt-0.5">100% Occupancy</span>
+            {/* Dynamic Tower Occupancy & Vacancy Summary Cards */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 font-mono">
+                  Towers & Wing Vacancy Overview ({towers.length} Towers)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTowerToEdit(null);
+                    setIsTowerModalOpen(true);
+                  }}
+                  className="text-xs text-[#CCFF00] hover:underline flex items-center gap-1 font-semibold"
+                >
+                  <Plus size={13} />
+                  <span>Add Tower</span>
+                </button>
               </div>
-              <div
-                onClick={() => handleTowerFilterChange('Tower B')}
-                className={`p-4 rounded-2xl border transition-all cursor-pointer ${
-                  residentTowerFilter === 'Tower B'
-                    ? 'bg-[#CCFF00]/10 border-[#CCFF00]'
-                    : 'bg-[#16171d] border-white/10 hover:border-white/20'
-                }`}
-              >
-                <span className="text-xs text-zinc-400 block mb-1 font-mono">Tower B</span>
-                <span className="font-display text-xl font-bold text-white">84 Units</span>
-                <span className="text-[10px] text-emerald-400 block mt-0.5">98% Occupancy</span>
-              </div>
-              <div
-                onClick={() => handleTowerFilterChange('Tower C')}
-                className={`p-4 rounded-2xl border transition-all cursor-pointer ${
-                  residentTowerFilter === 'Tower C'
-                    ? 'bg-[#CCFF00]/10 border-[#CCFF00]'
-                    : 'bg-[#16171d] border-white/10 hover:border-white/20'
-                }`}
-              >
-                <span className="text-xs text-zinc-400 block mb-1 font-mono">Tower C</span>
-                <span className="font-display text-xl font-bold text-white">80 Units</span>
-                <span className="text-[10px] text-emerald-400 block mt-0.5">95% Occupancy</span>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {towers.map((t) => {
+                  // Compute live occupied and vacant counts based on directory if available
+                  const liveOccupied = directory.filter(
+                    (r) =>
+                      (r.tower === t.name || (r.unit && r.unit.startsWith(t.name))) &&
+                      r.account_status !== 'Inactive' &&
+                      r.status !== 'Inactive'
+                  ).length;
+                  const displayOccupied = liveOccupied > 0 ? liveOccupied : t.occupied_flats;
+                  const displayVacant = Math.max(0, t.total_flats - displayOccupied);
+                  const occRate = t.total_flats > 0 ? `${Math.round((displayOccupied / t.total_flats) * 100)}%` : '0%';
+                  const isSelected = residentTowerFilter === t.name;
+
+                  return (
+                    <div
+                      key={t.id}
+                      onClick={() => handleTowerFilterChange(t.name)}
+                      className={`p-4 rounded-2xl border transition-all cursor-pointer relative group flex flex-col justify-between ${
+                        isSelected
+                          ? 'bg-[#CCFF00]/10 border-[#CCFF00] shadow-lg shadow-[#CCFF00]/10 ring-1 ring-[#CCFF00]'
+                          : 'bg-[#16171d] border-white/10 hover:border-white/20 hover:bg-[#1a1b22]'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-start justify-between">
+                          <span className="text-xs font-mono text-zinc-400 block font-bold">
+                            {t.name}
+                          </span>
+                          <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setTowerToEdit(t);
+                                setIsTowerModalOpen(true);
+                              }}
+                              className="p-1 rounded-md hover:bg-white/10 text-zinc-400 hover:text-[#CCFF00] transition-colors"
+                              title="Edit Capacity & Specs"
+                            >
+                              <Edit2 size={12} />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="mt-2">
+                          <span className="font-display text-2xl font-extrabold text-white block">
+                            {t.total_flats} Units
+                          </span>
+                          <span className="text-[11px] text-zinc-400 block">
+                            {t.floor_count || 14} Floors · {t.description || 'Residential Wing'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Occupied and Vacant Flat Indicators */}
+                      <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between text-xs font-mono">
+                        <div className="flex items-center gap-1.5 text-emerald-400">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                          <span className="font-bold">{displayOccupied} Occupied</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-amber-400">
+                          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                          <span className="font-bold">{displayVacant} Vacant</span>
+                        </div>
+                      </div>
+
+                      {/* Percentage Tag */}
+                      <div className="mt-2 flex items-center justify-between text-[10px]">
+                        <span className="px-2 py-0.5 rounded-full bg-white/5 text-zinc-300">
+                          {occRate} Occupancy
+                        </span>
+                        {displayVacant > 0 ? (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold">
+                            {displayVacant} Flats Available
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold">
+                            100% Full
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -699,17 +803,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               </form>
 
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-white/5 text-xs">
-                {/* Tower Filters */}
+                {/* Dynamic Tower Filter Buttons */}
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <span className="text-[11px] font-bold text-zinc-500 uppercase mr-1">Tower:</span>
-                  {['All', 'Tower A', 'Tower B', 'Tower C'].map((t) => (
+                  {['All', ...towers.map((t) => t.name)].map((t) => (
                     <button
                       key={t}
                       type="button"
                       onClick={() => handleTowerFilterChange(t)}
                       className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
                         residentTowerFilter === t
-                          ? 'bg-[#CCFF00] text-black font-bold'
+                          ? 'bg-[#CCFF00] text-black font-bold shadow-md shadow-[#CCFF00]/10'
                           : 'bg-white/5 text-zinc-300 hover:bg-white/10'
                       }`}
                     >
@@ -747,7 +851,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             <div className="p-6 rounded-3xl bg-[#16171d] border border-white/10 overflow-x-auto">
               <div className="flex items-center justify-between mb-4">
                 <span className="text-xs font-mono uppercase text-zinc-400">
-                  Showing {directory.length} resident records
+                  Showing {directory.length} resident records {residentTowerFilter !== 'All' && `in ${residentTowerFilter}`}
                 </span>
                 {isLoadingResidents && (
                   <span className="text-xs text-[#CCFF00] flex items-center gap-1.5">
@@ -758,8 +862,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               </div>
 
               {directory.length === 0 ? (
-                <div className="py-12 text-center text-zinc-500 text-xs border border-dashed border-white/10 rounded-2xl">
-                  No resident records match your criteria.
+                <div className="py-12 text-center text-zinc-500 text-xs border border-dashed border-white/10 rounded-2xl space-y-2">
+                  <p>No resident records match your criteria in {residentTowerFilter}.</p>
+                  <p className="text-[11px] text-zinc-600">You can transfer residents from another tower or add new records.</p>
                 </div>
               ) : (
                 <table className="w-full text-left text-xs">
@@ -785,7 +890,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                               </div>
                               <div>
                                 <span className="font-bold text-white block">{r.name}</span>
-                                <span className="text-[11px] text-zinc-400">{r.unit}</span>
+                                <span className="text-[11px] text-zinc-400 font-mono">{r.unit}</span>
                               </div>
                             </div>
                           </td>
@@ -820,6 +925,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                           </td>
                           <td className="py-3.5 text-right">
                             <div className="flex items-center justify-end gap-1.5">
+                              {/* Transfer / Move Tower Button */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setResidentToTransfer(r);
+                                  setIsTransferModalOpen(true);
+                                }}
+                                className="p-1.5 rounded-lg bg-white/5 hover:bg-[#CCFF00]/20 text-zinc-300 hover:text-[#CCFF00] transition-colors"
+                                title="Transfer / Reflect Resident into Tower B or another Tower"
+                              >
+                                <ArrowRightLeft size={14} />
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => handleOpenDetail(r.id)}
@@ -832,7 +949,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                                 type="button"
                                 onClick={() => handleOpenEditResident(r)}
                                 className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-[#CCFF00] transition-colors"
-                                title="Edit Resident"
+                                title="Edit Resident & Tower Assignment"
                               >
                                 <Edit2 size={14} />
                               </button>
@@ -900,6 +1017,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           setDirectory((prev) =>
             prev.map((r) => (r.id === id ? { ...r, account_status: newStatus, status: newStatus } : r))
           );
+        }}
+      />
+
+      {/* TOWER MANAGEMENT MODAL */}
+      <TowerModal
+        isOpen={isTowerModalOpen}
+        onClose={() => {
+          setIsTowerModalOpen(false);
+          setTowerToEdit(null);
+        }}
+        initialTowerToEdit={towerToEdit}
+        onTowersChanged={async () => {
+          await fetchAdminData();
+          await fetchResidentsList(residentTowerFilter, residentStatusFilter, residentSearchQuery);
+        }}
+      />
+
+      {/* RESIDENT TOWER TRANSFER MODAL */}
+      <TransferResidentModal
+        isOpen={isTransferModalOpen}
+        resident={residentToTransfer}
+        onClose={() => {
+          setIsTransferModalOpen(false);
+          setResidentToTransfer(null);
+        }}
+        onTransferred={async () => {
+          await fetchAdminData();
+          await fetchResidentsList(residentTowerFilter, residentStatusFilter, residentSearchQuery);
         }}
       />
     </div>

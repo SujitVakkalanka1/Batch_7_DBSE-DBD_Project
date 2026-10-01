@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { X, User, Building, Phone, Mail, Shield, KeyRound, Car } from 'lucide-react';
-import { UserProfile } from '../../types/portal';
+import { UserProfile, TowerInfo } from '../../types/portal';
 import { residentsApi, ResidentDirectoryItem } from '../../api/residents';
+import { towersApi } from '../../api/towers';
 
 interface ResidentFormModalProps {
   isOpen: boolean;
@@ -10,7 +11,7 @@ interface ResidentFormModalProps {
   onSaved: (resident: any) => void;
 }
 
-const TOWERS = ['Tower A', 'Tower B', 'Tower C'];
+const DEFAULT_TOWERS = ['Tower A', 'Tower B', 'Tower C'];
 const RESIDENT_TYPES = ['Owner Resident', 'Tenant Resident'];
 
 export const ResidentFormModal: React.FC<ResidentFormModalProps> = ({
@@ -19,6 +20,7 @@ export const ResidentFormModal: React.FC<ResidentFormModalProps> = ({
   residentToEdit,
   onSaved,
 }) => {
+  const [availableTowers, setAvailableTowers] = useState<string[]>(DEFAULT_TOWERS);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -33,30 +35,38 @@ export const ResidentFormModal: React.FC<ResidentFormModalProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
-    if (residentToEdit) {
-      setName(residentToEdit.name || '');
-      setEmail(residentToEdit.email || '');
-      setPhone(residentToEdit.phone || '');
-      setTower(residentToEdit.tower || 'Tower A');
-      setFlatNumber(residentToEdit.flat_number || '');
-      setResidentType(residentToEdit.resident_type || 'Owner Resident');
-      setParkingBay((residentToEdit as any).parking_bay || '');
-      setVehicleNumber((residentToEdit as any).vehicle_number || '');
-      setStatus((residentToEdit as any).account_status || residentToEdit.status || 'Active');
-      setPassword('');
-    } else {
-      setName('');
-      setEmail('');
-      setPhone('');
-      setTower('Tower A');
-      setFlatNumber('');
-      setResidentType('Owner Resident');
-      setPassword('123456');
-      setParkingBay('');
-      setVehicleNumber('');
-      setStatus('Active');
+    if (isOpen) {
+      towersApi.getTowers().then((list) => {
+        if (list && list.length > 0) {
+          setAvailableTowers(list.map(t => t.name));
+        }
+      }).catch(err => console.warn('Could not load towers for modal', err));
+
+      if (residentToEdit) {
+        setName(residentToEdit.name || '');
+        setEmail(residentToEdit.email || '');
+        setPhone(residentToEdit.phone || '');
+        setTower(residentToEdit.tower || 'Tower A');
+        setFlatNumber(residentToEdit.flat_number || '');
+        setResidentType(residentToEdit.resident_type || 'Owner Resident');
+        setParkingBay((residentToEdit as any).parking_bay || '');
+        setVehicleNumber((residentToEdit as any).vehicle_number || '');
+        setStatus((residentToEdit as any).account_status || residentToEdit.status || 'Active');
+        setPassword('');
+      } else {
+        setName('');
+        setEmail('');
+        setPhone('');
+        setTower('Tower A');
+        setFlatNumber('');
+        setResidentType('Owner Resident');
+        setPassword('123456');
+        setParkingBay('');
+        setVehicleNumber('');
+        setStatus('Active');
+      }
+      setErrorMsg('');
     }
-    setErrorMsg('');
   }, [residentToEdit, isOpen]);
 
   if (!isOpen) return null;
@@ -204,7 +214,7 @@ export const ResidentFormModal: React.FC<ResidentFormModalProps> = ({
                 onChange={(e) => setTower(e.target.value)}
                 className="w-full px-3 py-2.5 rounded-xl bg-[#1c1e24] border border-white/10 text-sm text-white focus:outline-none focus:border-[#CCFF00]"
               >
-                {TOWERS.map((t) => (
+                {availableTowers.map((t) => (
                   <option key={t} value={t}>
                     {t}
                   </option>

@@ -18,6 +18,7 @@ from app.routers import (
     bookings,
     notices,
     admin,
+    towers,
 )
 
 logging.basicConfig(
@@ -133,6 +134,7 @@ app.include_router(amenities.router, prefix=settings.API_V1_STR)
 app.include_router(bookings.router, prefix=settings.API_V1_STR)
 app.include_router(notices.router, prefix=settings.API_V1_STR)
 app.include_router(admin.router, prefix=settings.API_V1_STR)
+app.include_router(towers.router, prefix=settings.API_V1_STR)
 
 @app.get("/", tags=["Health & Info"])
 async def root_health():

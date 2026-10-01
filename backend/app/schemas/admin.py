@@ -5,7 +5,9 @@ class AdminDashboardStats(BaseModel):
     total_residents: int
     total_flats: int
     occupied_flats: int
+    total_vacant_flats: int = 0
     occupancy_rate: str
+    vacancy_rate: str = "0%"
     total_dues_collected: str
     total_dues_pending: str
     collection_efficiency: str
@@ -16,3 +18,4 @@ class AdminDashboardStats(BaseModel):
     resolved_complaints: int
     active_gate_passes: int
     upcoming_bookings: int
+    towers_summary: Optional[List[Dict[str, Any]]] = None

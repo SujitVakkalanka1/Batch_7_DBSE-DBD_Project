@@ -9,3 +9,4 @@ export * from './bookings';
 export * from './notices';
 export * from './admin';
 export * from './familyMembers';
+export * from './towers';

@@ -35,7 +35,17 @@ export interface FamilyMember {
   updated_at?: string;
 }
 
-
+export interface TowerInfo {
+  id: string;
+  name: string;
+  total_flats: number;
+  occupied_flats: number;
+  vacant_flats: number;
+  occupancy_rate: string;
+  vacancy_rate: string;
+  floor_count?: number;
+  description?: string;
+}
 
 export interface HighlightItem {
   id: string;

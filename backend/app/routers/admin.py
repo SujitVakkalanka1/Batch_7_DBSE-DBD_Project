@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from app.db.database import get_database
 from app.schemas.admin import AdminDashboardStats
 from app.services.auth_service import require_admin
+from app.routers.towers import ensure_default_towers
 
 router = APIRouter(prefix="/admin", tags=["Admin Dashboard"])
 
@@ -9,18 +10,47 @@ router = APIRouter(prefix="/admin", tags=["Admin Dashboard"])
 async def get_admin_dashboard_metrics(current_user: dict = Depends(require_admin)):
     """Admin: Aggregate overall society metrics for the operations console."""
     db = get_database()
+    await ensure_default_towers(db)
 
-    # Total counts
-    total_residents = await db.users.count_documents({"role": "resident"})
-    total_flats = await db.flats.count_documents({})
-    if total_flats == 0:
-        total_flats = 248  # Default society unit capacity
+    # Total counts from towers
+    tower_cursor = db.towers.find({})
+    total_flats_sum = 0
+    towers_summary = []
     
-    occupied_flats = await db.flats.count_documents({"occupancy_status": "Occupied"})
-    if occupied_flats == 0:
-        occupied_flats = max(total_residents, 242)
+    async for t in tower_cursor:
+        t_name = t.get("name", "Tower A")
+        t_capacity = t.get("total_flats", 84)
+        total_flats_sum += t_capacity
 
-    occupancy_rate = f"{round((occupied_flats / total_flats) * 100)}%" if total_flats > 0 else "98%"
+        t_occupied = await db.users.count_documents({
+            "role": "resident",
+            "status": {"$ne": "Inactive"},
+            "$or": [
+                {"tower": t_name},
+                {"unit": {"$regex": f"^{t_name}", "$options": "i"}},
+            ]
+        })
+        t_vacant = max(0, t_capacity - t_occupied)
+        t_occ_rate = f"{round((t_occupied / t_capacity) * 100)}%" if t_capacity > 0 else "0%"
+        t_vac_rate = f"{round((t_vacant / t_capacity) * 100)}%" if t_capacity > 0 else "100%"
+
+        towers_summary.append({
+            "id": t.get("id"),
+            "name": t_name,
+            "total_flats": t_capacity,
+            "occupied_flats": t_occupied,
+            "vacant_flats": t_vacant,
+            "occupancy_rate": t_occ_rate,
+            "vacancy_rate": t_vac_rate,
+        })
+
+    total_residents = await db.users.count_documents({"role": "resident", "status": {"$ne": "Inactive"}})
+    total_flats = total_flats_sum if total_flats_sum > 0 else 248
+    occupied_flats = total_residents
+    vacant_flats = max(0, total_flats - occupied_flats)
+
+    occupancy_rate = f"{round((occupied_flats / total_flats) * 100)}%" if total_flats > 0 else "0%"
+    vacancy_rate = f"{round((vacant_flats / total_flats) * 100)}%" if total_flats > 0 else "100%"
 
     # Complaints stats
     pending_complaints = await db.complaints.count_documents({"status": "Pending"})
@@ -71,7 +101,9 @@ async def get_admin_dashboard_metrics(current_user: dict = Depends(require_admin
         total_residents=total_residents,
         total_flats=total_flats,
         occupied_flats=occupied_flats,
+        total_vacant_flats=vacant_flats,
         occupancy_rate=occupancy_rate,
+        vacancy_rate=vacancy_rate,
         total_dues_collected=dues_collected_fmt,
         total_dues_pending=dues_pending_fmt,
         collection_efficiency=f"{efficiency} this cycle",
@@ -82,4 +114,5 @@ async def get_admin_dashboard_metrics(current_user: dict = Depends(require_admin
         resolved_complaints=resolved_complaints,
         active_gate_passes=active_gate_passes,
         upcoming_bookings=upcoming_bookings,
+        towers_summary=towers_summary,
     )

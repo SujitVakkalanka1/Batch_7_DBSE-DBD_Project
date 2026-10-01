@@ -14,6 +14,7 @@ import {
   FileText,
   CreditCard,
   QrCode,
+  AlertTriangle,
 } from 'lucide-react';
 import { BrandLogo } from '../common/BrandLogo';
 import { UserRole } from '../../types/portal';
@@ -324,8 +325,16 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ onLogin }) => {
               )}
 
               {errorMsg && (
-                <div className="p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 text-xs">
-                  {errorMsg}
+                <div className="p-3.5 rounded-2xl bg-red-500/15 border border-red-500/30 text-red-400 text-xs flex items-start gap-2.5 animate-fade-in shadow-lg shadow-red-500/10">
+                  <AlertTriangle size={17} className="text-red-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block text-red-300 font-mono text-[11px] uppercase tracking-wider">
+                      Access Blocked
+                    </span>
+                    <span className="text-red-200/90 text-xs leading-relaxed block mt-0.5">
+                      {errorMsg}
+                    </span>
+                  </div>
                 </div>
               )}
 

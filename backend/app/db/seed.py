@@ -24,6 +24,16 @@ async def seed_database():
     await db.amenities.delete_many({})
     await db.bookings.delete_many({})
     await db.notices.delete_many({})
+    await db.towers.delete_many({})
+
+    # 0. Towers
+    towers_data = [
+        {"id": "TOW-A", "name": "Tower A", "total_flats": 84, "floor_count": 14, "description": "Residential Tower A (14 Floors, 6 units/floor)"},
+        {"id": "TOW-B", "name": "Tower B", "total_flats": 84, "floor_count": 14, "description": "Residential Tower B (14 Floors, 6 units/floor)"},
+        {"id": "TOW-C", "name": "Tower C", "total_flats": 80, "floor_count": 16, "description": "Residential Tower C (16 Floors, 5 units/floor)"},
+    ]
+    await db.towers.insert_many(towers_data)
+    logger.info(f"Inserted {len(towers_data)} towers.")
 
     # 1. Users
     users_data = [

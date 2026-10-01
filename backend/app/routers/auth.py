@@ -19,64 +19,96 @@ async def login(req: LoginRequest):
     user = None
     
     if req.role == "resident":
-        # Match resident by flat, phone or email
-        # Normalize phone search (strip spaces, +91 etc.)
-        query = {"role": "resident"}
-        if req.phone:
-            raw_phone = req.phone.replace(" ", "").replace("+91", "").replace("-", "")
-            # Find matching phone regex
-            user = await db.users.find_one({
-                "role": "resident",
-                "$or": [
-                    {"phone": req.phone},
-                    {"phone": {"$regex": raw_phone if raw_phone else ".*"}},
-                    {"unit": req.flat_number} if req.flat_number else {"_id": {"$exists": True}}
-                ]
-            })
-        if not user and req.flat_number:
-            user = await db.users.find_one({
-                "role": "resident",
-                "unit": {"$regex": req.flat_number.strip(), "$options": "i"}
-            })
-        if not user:
-            # Fallback for demo resident
-            user = await db.users.find_one({"role": "resident"})
-            
+        # Search resident strictly by provided phone, email or flat_number
+        query_conditions = [{"role": "resident"}]
+        
+        has_criteria = False
+        criteria_or = []
+
+        if req.phone and req.phone.strip():
+            raw_phone = req.phone.replace(" ", "").replace("+91", "").replace("-", "").strip()
+            if raw_phone:
+                has_criteria = True
+                criteria_or.append({"phone": req.phone.strip()})
+                criteria_or.append({"phone": {"$regex": raw_phone, "$options": "i"}})
+
+        if req.flat_number and req.flat_number.strip():
+            clean_flat = req.flat_number.strip()
+            has_criteria = True
+            criteria_or.append({"unit": {"$regex": clean_flat, "$options": "i"}})
+            criteria_or.append({"flat_number": {"$regex": f"^{clean_flat}$", "$options": "i"}})
+            # Match flat part if unit is like "Tower B · Flat 704"
+            flat_only = clean_flat.split("·")[-1].replace("Flat", "").strip()
+            if flat_only:
+                criteria_or.append({"flat_number": flat_only})
+
+        if not has_criteria:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Please provide your registered flat number or phone number."
+            )
+
+        user = await db.users.find_one({
+            "role": "resident",
+            "$or": criteria_or
+        })
+
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Resident account not found with the provided details."
+                detail="Access Blocked: Invalid resident credentials. No resident account found matching these details."
             )
-            
-        # Verify passcode (support default "123456" and masked pin "••••••" or bcrypt hash)
-        if req.passcode and req.passcode != "••••••" and req.passcode != "123456":
-            if user.get("hashed_password") and not verify_password(req.passcode, user["hashed_password"]):
+
+        # Check account status (Block inactive or suspended residents)
+        if user.get("status") == "Inactive" or user.get("account_status") == "Inactive":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access Blocked: Resident account is deactivated. Please contact society administration."
+            )
+
+        # Verify passcode / PIN
+        if req.passcode:
+            valid_pin = False
+            # Check default demo PINs
+            if req.passcode in ["123456", "••••••"]:
+                valid_pin = True
+            elif user.get("hashed_password") and verify_password(req.passcode, user["hashed_password"]):
+                valid_pin = True
+
+            if not valid_pin:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid passcode or PIN entered."
+                    detail="Access Blocked: Invalid passcode or PIN entered."
                 )
 
     elif req.role == "admin":
-        email = req.email.strip() if req.email else "admin@mapleheights.org"
-        user = await db.users.find_one({"role": "admin", "email": {"$regex": f"^{email}$", "$options": "i"}})
-        
-        if not user:
-            # Fallback admin
-            user = await db.users.find_one({"role": "admin"})
-            
+        if not req.email or not req.email.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Administrator email is required."
+            )
+
+        email = req.email.strip().lower()
+        user = await db.users.find_one({"role": "admin", "email": email})
+
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Administrator account not found."
+                detail="Access Blocked: Administrator account not found."
             )
-            
-        # Verify password (support "admin123", "••••••••••••" demo key, or hashed password)
-        if req.password and req.password not in ["••••••••••••", "admin123", "admin"]:
-            if user.get("hashed_password") and not verify_password(req.password, user["hashed_password"]):
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid master security key."
-                )
+
+        # Verify master security key
+        valid_admin = False
+        if req.password in ["admin123", "admin", "••••••••••••"]:
+            valid_admin = True
+        elif user.get("hashed_password") and verify_password(req.password, user["hashed_password"]):
+            valid_admin = True
+
+        if not valid_admin:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Access Blocked: Invalid master security key."
+            )
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
